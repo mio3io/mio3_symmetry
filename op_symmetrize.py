@@ -25,7 +25,7 @@ class MIO3_OT_quick_symmetrize(Operator):
     uvmap: BoolProperty(name="UVMap", default=False)
     center: BoolProperty(name="Origin to Center", default=True)
     remove_mirror_mod: BoolProperty(name="Remove Mirror Modifier", default=True)
-    suffix_pairs = [("_L", "_R"), (".L", ".R"), ("-L", "-R")]
+    suffix_pairs = [("_L", "_R"), (".L", ".R"), ("-L", "-R"), ("Left", "Right")]
     main_verts = []
     sub_verts = []
     replace_names = {
@@ -258,7 +258,7 @@ class MIO3_OT_quick_symmetrize(Operator):
 
     # 表情の非対称化
     def unsymm_facial(self, obj):
-        suffix_pairs = [("_L", "_R")]
+        suffix_pairs = self.suffix_pairs
         if not obj.data.shape_keys:
             return
         
