@@ -9,7 +9,7 @@ from . import op_uv_preview
 bl_info = {
     "name": "Mio3 Symmetry",
     "author": "mio",
-    "version": (0, 9, 2),
+    "version": (0, 9, 3),
     "blender": (3, 6, 0),
     "location": "View3D > Object",
     "description": "Symmetrize meshes, shape keys, vertex groups, UVs, and normals while maintaining multi-resolution",
