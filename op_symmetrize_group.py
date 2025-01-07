@@ -9,10 +9,10 @@ from bpy.props import (
     CollectionProperty,
 )
 import bmesh
-from .op_uv_preview import MIO3QS_OT_UvPreview
+from .op_symmetrize_preview import MIO3QS_OT_preview_uv
 
 
-class MIO3QS_OT_GroupAdd(Operator):
+class MIO3QS_OT_group_add(Operator):
     bl_idname = "mio3qs.group_add"
     bl_label = "Add Item"
     bl_description = "Add group Align to vertex or cursor position"
@@ -98,7 +98,7 @@ class MIO3QS_OT_GroupAdd(Operator):
         return {"FINISHED"}
 
 
-class MIO3QS_OT_GroupRemove(Operator):
+class MIO3QS_OT_group_remove(Operator):
     bl_idname = "mio3qs.group_remove"
     bl_label = "Remove Item"
     bl_options = {"REGISTER", "UNDO"}
@@ -110,7 +110,7 @@ class MIO3QS_OT_GroupRemove(Operator):
         return {"FINISHED"}
 
 
-class MIO3QS_OT_GroupMove(Operator):
+class MIO3QS_OT_group_move(Operator):
     bl_idname = "mio3qs.group_move"
     bl_label = "Move Item"
     bl_options = {"REGISTER", "UNDO"}
@@ -137,13 +137,13 @@ class MIO3QS_OT_GroupMove(Operator):
         return {"FINISHED"}
 
 
-class MIO3QS_PT_SubGroup(Panel):
+class MIO3QS_PT_sub_group(Panel):
     bl_label = "Mirror Groups"
-    bl_idname = "MIO3QS_PT_SubGroup"
+    bl_idname = "MIO3QS_PT_sub_group"
     bl_space_type = "IMAGE_EDITOR"
     bl_region_type = "UI"
     bl_category = "Mio3"
-    bl_parent_id = "MIO3QS_PT_Main"
+    bl_parent_id = "MIO3QS_PT_main"
 
     def draw(self, context):
         layout = self.layout
@@ -158,7 +158,7 @@ class MIO3QS_PT_SubGroup(Panel):
 
         row = layout.row()
         row.template_list(
-            "MIO3QS_UL_GroupList",
+            "MIO3QS_UL_group_list",
             "vglist",
             vglist,
             "items",
@@ -188,9 +188,9 @@ class MIO3QS_PT_SubGroup(Panel):
             row.prop_search(item, "vertex_group", obj, "vertex_groups", text="")
 
 
-class MIO3QS_PT_Main(Panel):
+class MIO3QS_PT_main(Panel):
     bl_label = "Mio3 QuickSymmetry"
-    bl_idname = "MIO3QS_PT_Main"
+    bl_idname = "MIO3QS_PT_main"
     bl_space_type = "IMAGE_EDITOR"
     bl_region_type = "UI"
     bl_category = "Mio3"
@@ -204,53 +204,53 @@ class MIO3QS_PT_Main(Panel):
         layout = self.layout
         row = layout.row(align=True)
         row.scale_x = 1.3
-        row.operator("mio3qs.preview", text="Preview UV", icon="AREA_SWAP")
-        row.operator("mio3qs.preview_refresh", icon="FILE_REFRESH", text="")
+        row.operator("mio3qs.preview_uv", text="Preview UV", icon="AREA_SWAP")
+        row.operator("mio3qs.preview_uv_refresh", icon="FILE_REFRESH", text="")
 
 
-class MIO3QS_UL_GroupList(UIList):
+class MIO3QS_UL_group_list(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
         row.label(text=f"{item.vertex_group}", icon="GROUP_VERTEX")
 
 
 def update_props(self, context):
-    MIO3QS_OT_UvPreview.redraw(context)
+    MIO3QS_OT_preview_uv.redraw(context)
 
 
-class MIO3QS_PG_GroupItem(PropertyGroup):
+class MIO3QS_PG_group_item(PropertyGroup):
     vertex_group: StringProperty(name="Vertex Group")
     uv_coord_u: FloatProperty(name="UV U", min=0.0, max=1.0, update=update_props)
     uv_offset_v: FloatProperty(name="Offset V", min=-1.0, max=1.0, update=update_props)
 
 
-class MIO3QS_PG_GroupList(PropertyGroup):
-    items: CollectionProperty(name="items", type=MIO3QS_PG_GroupItem)
+class MIO3QS_PG_group_list(PropertyGroup):
+    items: CollectionProperty(name="items", type=MIO3QS_PG_group_item)
     active_index: IntProperty()
 
 
-class MIO3QS_Props(PropertyGroup):
-    vglist: PointerProperty(name="vglist", type=MIO3QS_PG_GroupList)
+class MIO3QS_PG_main(PropertyGroup):
+    vglist: PointerProperty(name="vglist", type=MIO3QS_PG_group_list)
     selected_vertex_group: StringProperty(name="Selected Vertex Group")
 
 
 classes = [
-    MIO3QS_PG_GroupItem,
-    MIO3QS_PG_GroupList,
-    MIO3QS_Props,
-    MIO3QS_UL_GroupList,
-    MIO3QS_OT_GroupAdd,
-    MIO3QS_OT_GroupRemove,
-    MIO3QS_OT_GroupMove,
-    MIO3QS_PT_Main,
-    MIO3QS_PT_SubGroup,
+    MIO3QS_PG_group_item,
+    MIO3QS_PG_group_list,
+    MIO3QS_PG_main,
+    MIO3QS_OT_group_add,
+    MIO3QS_OT_group_remove,
+    MIO3QS_OT_group_move,
+    MIO3QS_UL_group_list,
+    MIO3QS_PT_main,
+    MIO3QS_PT_sub_group,
 ]
 
 
 def register():
     for c in classes:
         bpy.utils.register_class(c)
-    bpy.types.Object.mio3qs = PointerProperty(type=MIO3QS_Props)
+    bpy.types.Object.mio3qs = PointerProperty(type=MIO3QS_PG_main)
 
 
 def unregister():

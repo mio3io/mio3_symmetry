@@ -3,8 +3,8 @@ from bpy.types import Operator, Panel
 from bpy.props import EnumProperty, BoolProperty
 from bpy.app.translations import pgettext
 from . import op_symmetrize
-from . import op_uv_group
-from . import op_uv_preview
+from . import op_symmetrize_group
+from . import op_symmetrize_preview
 
 bl_info = {
     "name": "Mio3 Symmetry",
@@ -35,8 +35,8 @@ translation_dict = {
 
 modules = [
     op_symmetrize,
-    op_uv_group,
-    op_uv_preview,
+    op_symmetrize_group,
+    op_symmetrize_preview,
 ]
 
 

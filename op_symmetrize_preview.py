@@ -2,12 +2,13 @@ import bpy
 import bmesh
 import gpu
 from gpu_extras.batch import batch_for_shader
+from bpy.types import Operator
 
 mio3qs_preview_msgbus = object()
 
 
 def callback(cls, context):
-    MIO3QS_OT_UvPreview.handle_remove()
+    MIO3QS_OT_preview_uv.handle_remove()
     bpy.msgbus.clear_by_owner(mio3qs_preview_msgbus)
 
 
@@ -18,24 +19,25 @@ def reload_view(context):
                 area.tag_redraw()
 
 
-class MIO3QS_OT_UvPreviewRefresh(bpy.types.Operator):
-    bl_idname = "mio3qs.preview_refresh"
+class MIO3QS_OT_preview_uv_refresh(Operator):
+    bl_idname = "mio3qs.preview_uv_refresh"
     bl_label = "Refresh Mesh"
     bl_description = "Refresh Mesh"
     bl_options = {"REGISTER", "UNDO"}
+
     @classmethod
     def poll(cls, context):
-        return (
-            context.active_object is not None and context.active_object.mode == "EDIT"
-        )
+        obj = context.active_object
+        return obj is not None and obj.mode == "EDIT"
+
     def execute(self, context):
-        MIO3QS_OT_UvPreview.update_mesh(context)
+        MIO3QS_OT_preview_uv.update_mesh(context)
         reload_view(context)
         return {"FINISHED"}
 
 
-class MIO3QS_OT_UvPreview(bpy.types.Operator):
-    bl_idname = "mio3qs.preview"
+class MIO3QS_OT_preview_uv(Operator):
+    bl_idname = "mio3qs.preview_uv"
     bl_label = "Preview UV"
     bl_description = "Preview UV"
     bl_options = {"REGISTER", "UNDO"}
@@ -48,27 +50,24 @@ class MIO3QS_OT_UvPreview(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return (
-            context.active_object is not None and context.active_object.mode == "EDIT"
-        )
+        obj = context.active_object
+        return obj is not None and obj.mode == "EDIT"
 
     def execute(self, context):
         context.scene.tool_settings.use_uv_select_sync = False
-        if not MIO3QS_OT_UvPreview.is_running():
+        if not MIO3QS_OT_preview_uv.is_running():
             self.handle_add(context)
         else:
-            MIO3QS_OT_UvPreview.handle_remove()
+            MIO3QS_OT_preview_uv.handle_remove()
         reload_view(context)
         return {"FINISHED"}
 
     @classmethod
     def __draw(cls, context):
-        # cls.update_mesh(context)
         viewport_vertices = [
             cls.__region.view2d.view_to_region(v[0], v[1], clip=False) for v in cls.__vertices
         ]
         batch = batch_for_shader(cls.__shader, "LINES", {"pos": viewport_vertices})
-
         cls.__shader.bind()
         cls.__shader.uniform_float("color", cls.__color)
         batch.draw(cls.__shader)
@@ -139,14 +138,11 @@ class MIO3QS_OT_UvPreview(bpy.types.Operator):
                 if face in processed_faces:
                     for item in obj.mio3qs.vglist.items:
                         if face in face_groups.get(item.vertex_group, set()):
-                            poly_uvs = [
-                                mirror_uv(uv, item.uv_coord_u, item.uv_offset_v)
-                                for uv in poly_uvs
-                            ]
+                            poly_uvs = [mirror_uv(uv, item.uv_coord_u, item.uv_offset_v) for uv in poly_uvs]
                             break
                 else:
                     poly_uvs = [mirror_uv(uv, 0.5, 0) for uv in poly_uvs]
-                
+
                 for i in range(len(poly_uvs)):
                     cls.__vertices.extend([poly_uvs[i], poly_uvs[(i + 1) % len(poly_uvs)]])
 
@@ -158,7 +154,7 @@ class MIO3QS_OT_UvPreview(bpy.types.Operator):
             bpy.types.SpaceImageEditor.draw_handler_remove(cls.__handle, "WINDOW")
             cls.__handle = None
             cls.__shader = None
-            cls.__region= None
+            cls.__region = None
             cls.__vertices = []
             bpy.msgbus.clear_by_owner(mio3qs_preview_msgbus)
 
@@ -169,10 +165,10 @@ class MIO3QS_OT_UvPreview(bpy.types.Operator):
 
 @bpy.app.handlers.persistent
 def load_handler(dummy):
-    MIO3QS_OT_UvPreview.handle_remove()
+    MIO3QS_OT_preview_uv.handle_remove()
 
 
-classes = [MIO3QS_OT_UvPreview, MIO3QS_OT_UvPreviewRefresh]
+classes = [MIO3QS_OT_preview_uv, MIO3QS_OT_preview_uv_refresh]
 
 
 def register():
