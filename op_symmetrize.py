@@ -329,16 +329,24 @@ class MIO3_OT_quick_symmetrize(Operator):
             if vgroup_name in processed_vgroup:
                 continue
 
+            base_name = vgroup_name
+            extra_suffix = ""
+            if "." in vgroup_name:
+                split_name = vgroup_name.rsplit(".", 1)
+                if split_name[1] not in {"L", "R"}:
+                    base_name = split_name[0]
+                    extra_suffix = ".{}".format(split_name[1])
+
             current_suffix = None
             for l_suffix, r_suffix in self.suffix_pairs:
-                if vgroup_name.endswith(l_suffix if self.mode == "+X" else r_suffix):
+                if base_name.endswith(l_suffix if self.mode == "+X" else r_suffix):
                     current_suffix = l_suffix if self.mode == "+X" else r_suffix
                     opposite_suffix = r_suffix if self.mode == "+X" else l_suffix
                     break
 
             if current_suffix:
-                base_name = vgroup_name[: -len(current_suffix)]
-                opposite_name = "{}{}".format(base_name, opposite_suffix)
+                name_without_suffix = base_name[:-len(current_suffix)]
+                opposite_name = "{}{}{}".format(name_without_suffix, opposite_suffix, extra_suffix)
 
                 if opposite_name in name_to_group:
                     current_group = name_to_group[vgroup_name]
