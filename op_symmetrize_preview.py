@@ -7,7 +7,7 @@ from bpy.types import Operator
 mio3qs_preview_msgbus = object()
 
 
-def callback(cls, context):
+def callback_mode_change(cls, context):
     MIO3QS_OT_preview_uv.handle_remove()
     bpy.msgbus.clear_by_owner(mio3qs_preview_msgbus)
 
@@ -88,7 +88,7 @@ class MIO3QS_OT_preview_uv(Operator):
             key=(bpy.types.Object, "mode"),
             owner=mio3qs_preview_msgbus,
             args=(cls, context),
-            notify=callback,
+            notify=callback_mode_change,
         )
         area = next(a for a in context.screen.areas if a.type == "IMAGE_EDITOR")
         cls.__region = next(r for r in area.regions if r.type == "WINDOW")
@@ -120,15 +120,15 @@ class MIO3QS_OT_preview_uv(Operator):
             face_groups = {}
             processed_faces = set()
 
-            for item in obj.mio3qs.vglist.items:
-                vg = obj.vertex_groups.get(item.vertex_group)
+            for item in obj.mio3qs.uv_group.items:
+                vg = obj.vertex_groups.get(item.name)
                 if vg:
-                    face_groups[item.vertex_group] = set()
+                    face_groups[item.name] = set()
                     for f in bm.faces:
                         if f not in processed_faces:
                             try:
                                 if all(vg.index in v[deform_layer] for v in f.verts):
-                                    face_groups[item.vertex_group].add(f)
+                                    face_groups[item.name].add(f)
                                     processed_faces.add(f)
                             except:
                                 pass
@@ -136,8 +136,8 @@ class MIO3QS_OT_preview_uv(Operator):
             for face in bm.faces:
                 poly_uvs = [loop[uv_layer].uv.copy() for loop in face.loops]
                 if face in processed_faces:
-                    for item in obj.mio3qs.vglist.items:
-                        if face in face_groups.get(item.vertex_group, set()):
+                    for item in obj.mio3qs.uv_group.items:
+                        if face in face_groups.get(item.name, set()):
                             poly_uvs = [mirror_uv(uv, item.uv_coord_u, item.uv_offset_v) for uv in poly_uvs]
                             break
                 else:

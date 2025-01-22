@@ -12,7 +12,7 @@ TMP_DATA_TRANSFER_NAME = "Mio3qsTempDataTransfer"
 
 class MIO3_OT_quick_symmetrize(Operator):
     bl_idname = "object.mio3_symmetry"
-    bl_label = "Mio3 Symmetry"
+    bl_label = "Symmetrize & Recovery"
     bl_description = "Symmetrize meshes, shape keys, vertex groups, UVs, and normals"
     bl_options = {"REGISTER", "UNDO"}
 
@@ -136,7 +136,7 @@ class MIO3_OT_quick_symmetrize(Operator):
         if original_cursor_location is not None:
             context.scene.cursor.location = original_cursor_location
 
-        obj.active_shape_key_index =  active_shape_key_index
+        obj.active_shape_key_index = active_shape_key_index
 
         if TMP_VG_NAME in obj.vertex_groups:
             obj.vertex_groups.remove(obj.vertex_groups[TMP_VG_NAME])
@@ -150,16 +150,16 @@ class MIO3_OT_quick_symmetrize(Operator):
 
     def create_temp_vgroup(self, obj, bm):
         deform_layer = bm.verts.layers.deform.verify()
-        
+
         if TMP_VG_NAME in obj.vertex_groups:
             vg = obj.vertex_groups[TMP_VG_NAME]
             obj.vertex_groups.remove(vg)
 
         self.vg = obj.vertex_groups.new(name=TMP_VG_NAME)
-        
+
         for v in bm.verts:
             if v.select:
-                if v.co.x != 0.0:  
+                if v.co.x != 0.0:
                     v[deform_layer][self.vg.index] = 1.0
 
         bm.to_mesh(obj.data)
@@ -186,10 +186,10 @@ class MIO3_OT_quick_symmetrize(Operator):
         face_groups = {}
         processed_faces = set()
         select_condition = lambda x: x < 0 if self.mode == "+X" else x > 0
-        for item in obj.mio3qs.vglist.items:
-            vg = obj.vertex_groups.get(item.vertex_group)
+        for item in obj.mio3qs.uv_group.items:
+            vg = obj.vertex_groups.get(item.name)
             if vg:
-                face_groups[item.vertex_group] = set()
+                face_groups[item.name] = set()
                 for f in bm.faces:
                     if f not in processed_faces:
                         # グループに登録されている
@@ -197,15 +197,15 @@ class MIO3_OT_quick_symmetrize(Operator):
                             if all(vg.index in v[deform_layer] for v in f.verts):
                                 # 片側の面
                                 if any(select_condition(v.co.x) for v in f.verts):
-                                    face_groups[item.vertex_group].add(f)
+                                    face_groups[item.name].add(f)
                                 processed_faces.add(f)
                         except:
                             pass
 
         # グループごとに処理
-        for item in obj.mio3qs.vglist.items:
-            if item.vertex_group in face_groups:
-                mirror_uv(face_groups[item.vertex_group], item.uv_coord_u, item.uv_offset_v)
+        for item in obj.mio3qs.uv_group.items:
+            if item.name in face_groups:
+                mirror_uv(face_groups[item.name], item.uv_coord_u, item.uv_offset_v)
 
         # General
         general_faces = set(bm.faces) - processed_faces
@@ -264,7 +264,7 @@ class MIO3_OT_quick_symmetrize(Operator):
         suffix_pairs = self.suffix_pairs
         if not obj.data.shape_keys:
             return
-        
+
         key_blocks = obj.data.shape_keys.key_blocks
         if not key_blocks:
             return
@@ -279,16 +279,16 @@ class MIO3_OT_quick_symmetrize(Operator):
         basis = obj.data.shape_keys.reference_key
         basis_coords = np.zeros(len(basis.data) * 3, dtype=np.float32)
         basis.data.foreach_get("co", basis_coords)
-        
+
         for i, target_kb in enumerate(key_blocks):
             for target_suffix, source_suffix in pairs:
                 if target_kb.name.endswith(target_suffix):
-                    source_name = target_kb.name[:-len(target_suffix)] + source_suffix
+                    source_name = target_kb.name[: -len(target_suffix)] + source_suffix
                     if source_name in key_blocks:
 
                         vertex_mask = np.array([v.select for v in obj.data.vertices], dtype=bool)
                         mask_indices = np.where(vertex_mask)[0]
-                        
+
                         if len(mask_indices) == 0:
                             continue
 
@@ -296,18 +296,20 @@ class MIO3_OT_quick_symmetrize(Operator):
 
                         source_coords = np.zeros(len(source_kb.data) * 3, dtype=np.float32)
                         source_kb.data.foreach_get("co", source_coords)
-                        
+
                         target_coords = np.zeros(len(target_kb.data) * 3, dtype=np.float32)
                         target_kb.data.foreach_get("co", target_coords)
-                        
+
                         for idx in mask_indices:
                             coord_idx = idx * 3
-                            target_coords[coord_idx:coord_idx + 3] = source_coords[coord_idx:coord_idx + 3]
+                            target_coords[coord_idx : coord_idx + 3] = source_coords[
+                                coord_idx : coord_idx + 3
+                            ]
                         target_kb.data.foreach_set("co", target_coords)
 
                         for idx in mask_indices:
                             coord_idx = idx * 3
-                            source_coords[coord_idx:coord_idx + 3] = basis_coords[coord_idx:coord_idx + 3]
+                            source_coords[coord_idx : coord_idx + 3] = basis_coords[coord_idx : coord_idx + 3]
                         source_kb.data.foreach_set("co", source_coords)
                         break
 
@@ -345,7 +347,7 @@ class MIO3_OT_quick_symmetrize(Operator):
                     break
 
             if current_suffix:
-                name_without_suffix = base_name[:-len(current_suffix)]
+                name_without_suffix = base_name[: -len(current_suffix)]
                 opposite_name = "{}{}{}".format(name_without_suffix, opposite_suffix, extra_suffix)
 
                 if opposite_name in name_to_group:
@@ -376,10 +378,7 @@ classes = [MIO3_OT_quick_symmetrize]
 
 def menu_transform(self, context):
     self.layout.separator()
-    self.layout.operator(
-        MIO3_OT_quick_symmetrize.bl_idname,
-        text=pgettext(MIO3_OT_quick_symmetrize.bl_label),
-    )
+    self.layout.operator(MIO3_OT_quick_symmetrize.bl_idname)
 
 
 def register():
