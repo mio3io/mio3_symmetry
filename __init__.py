@@ -1,7 +1,4 @@
 import bpy
-from bpy.types import Operator, Panel
-from bpy.props import EnumProperty, BoolProperty
-from bpy.app.translations import pgettext
 from . import op_symmetrize
 from . import op_symmetrize_group
 from . import op_symmetrize_preview
@@ -10,7 +7,7 @@ bl_info = {
     "name": "Mio3 Symmetry",
     "author": "mio",
     "version": (0, 9, 3),
-    "blender": (3, 6, 0),
+    "blender": (4, 2, 0),
     "location": "View3D > Object",
     "description": "Symmetrize meshes, shape keys, vertex groups, UVs, and normals while maintaining multi-resolution",
     "category": "Object",

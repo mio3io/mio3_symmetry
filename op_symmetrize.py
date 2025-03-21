@@ -1,7 +1,6 @@
 import bpy
 from bpy.types import Operator
 from bpy.props import EnumProperty, BoolProperty
-from bpy.app.translations import pgettext
 import bmesh
 import time
 import numpy as np

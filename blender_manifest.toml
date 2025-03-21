@@ -1,0 +1,13 @@
+schema_version = "1.0.0"
+id = "mio3_symmetry"
+name = "Mio3 Symmetry"
+version = "0.9.3"
+tagline = "Mesh Symmetry Tools"
+maintainer = "Mio"
+type = "add-on"
+tags = ["Mesh"]
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+website = "https://github.com/mio3io"
+copyright = ["2025 Mio"]
+

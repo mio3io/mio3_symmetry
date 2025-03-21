@@ -1,6 +1,5 @@
-import typing
 import bpy
-from bpy.types import Context, Operator, Panel, UILayout, UIList, PropertyGroup
+from bpy.types import Operator, Panel, UIList, PropertyGroup
 from bpy.props import (
     FloatProperty,
     IntProperty,
@@ -39,7 +38,7 @@ class MIO3QS_OT_uv_group_add(Operator):
         if not obj or obj.type != "MESH":
             self.report({"ERROR"}, "No active mesh object")
             return {"CANCELLED"}
-        
+
         return self.execute(context)
 
     def execute(self, context):
@@ -208,13 +207,18 @@ class MIO3QS_PT_main(Panel):
 
         row = layout.row(align=True)
         row.scale_x = 1.3
-        row.operator("mio3qs.preview_uv", text="Preview UV", icon="AREA_SWAP", depress=MIO3QS_OT_preview_uv.is_running())
+        row.operator(
+            "mio3qs.preview_uv",
+            text="Preview UV",
+            icon="AREA_SWAP",
+            depress=MIO3QS_OT_preview_uv.is_running(),
+        )
         row.operator("mio3qs.preview_uv_refresh", icon="FILE_REFRESH", text="")
-
 
 
 class MIO3QS_UL_uv_group_list(UIList):
     bl_idname = "MIO3QS_UL_uv_group_list"
+
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
         row.prop(item, "name", icon="GROUP_VERTEX", text="", emboss=False)
@@ -233,6 +237,7 @@ class MIO3QS_PG_uv_group(PropertyGroup):
     items: CollectionProperty(name="UV Group Items", type=MIO3QS_PG_uv_group_item)
     active_index: IntProperty()
     # general: PointerProperty(name="General", type=MIO3QS_PG_uv_group_item)
+
 
 class MIO3QS_PG_main(PropertyGroup):
     uv_group: PointerProperty(name="UV Group", type=MIO3QS_PG_uv_group)
