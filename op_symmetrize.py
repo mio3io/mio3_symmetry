@@ -140,7 +140,9 @@ class MIO3_OT_quick_symmetrize(Operator):
         if TMP_VG_NAME in obj.vertex_groups:
             obj.vertex_groups.remove(obj.vertex_groups[TMP_VG_NAME])
 
+        copy_mesh = orgcopy.data
         bpy.data.objects.remove(orgcopy, do_unlink=True)
+        bpy.data.meshes.remove(copy_mesh, do_unlink=True)
 
         vart_count_2 = len(obj.data.vertices)
         stime = time.time() - start_time
