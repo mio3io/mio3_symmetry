@@ -23,30 +23,36 @@ translation_dict = {
         ("*", "Origin to Center"): "原点を基準に対称化",
         ("*", "Object is not a mesh"): "オブジェクトがメッシュではありません",
         ("*", "Symmetrize meshes, shape keys, vertex groups, UVs, and normals while maintaining multi-resolution"): "マルチレゾを維持してメッシュ・シェイプキー・頂点グループ・UV・法線を対称化",
-        ("*", "Align to vertex position"): "頂点位置に合わせる",
-        ("*", "Align to cursor position"): "カーソル位置に合わせる",
-        ("*", "Add group Align to vertex or cursor position"): "グループを追加 頂点またはカーソル位置に合わせる",
+        ("*", "Add a weighted vertex group"): "ウェイトを設定した頂点グループを追加する",
+
+        ("Operator", "Update from 2D Cursor"): "2Dカーソルからグループを更新",
+        ("*", "Update UV Group coords from 2D Cursor"): "2DカーソルからUVグループの座標を更新します",
+        ("Operator", "Update from UV"): "UVからグループを更新",
+        ("*", "Update UV Group coords from Active UV"): "アクティブなUVからUVグループの座標を更新します",
+
+        ("*", ""): "",
+
     }  # fmt: skip
 }
 
 
 modules = [
     op_symmetrize,
-    op_symmetrize_group,
     op_symmetrize_preview,
+    op_symmetrize_group,
 ]
 
 
 def register():
-    bpy.app.translations.register(__name__, translation_dict)
     for module in modules:
         module.register()
+    bpy.app.translations.register(__name__, translation_dict)
 
 
 def unregister():
+    bpy.app.translations.unregister(__name__)
     for module in reversed(modules):
         module.unregister()
-    bpy.app.translations.unregister(__name__)
 
 
 if __name__ == "__main__":

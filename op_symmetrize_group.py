@@ -9,24 +9,45 @@ from bpy.props import (
     CollectionProperty,
 )
 import bmesh
-from .op_symmetrize_preview import MIO3QS_OT_preview_uv
+from .op_symmetrize_preview import UV_OT_mio3_symmetry_preview
 
 
-class MIO3QS_OT_uv_group_add(Operator):
-    bl_idname = "mio3qs.group_add"
-    bl_label = "Add Item"
-    bl_description = "Add group Align to vertex or cursor position"
+class OBJECT_OT_mio3qs_uv_group_add(Operator):
+    bl_idname = "object.mio3qs_uv_group_add"
+    bl_label = "Add Group"
+    bl_description = "Add a weighted vertex group"
     bl_options = {"REGISTER", "UNDO"}
 
-    type: EnumProperty(
-        items=[
-            ("ADD", "Add", ""),
-            ("REPLACE", "Replace", "Align to vertex position"),
-            ("CURSOR_U", "Cursor", "Align to cursor position"),
-            ("CURSOR_V", "Cursor", "Align to cursor position"),
-        ],
-        options={"HIDDEN"},
-    )
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.mio3qs.selected_vertex_group
+
+    def invoke(self, context, event):
+        obj = context.active_object
+        if not obj or obj.type != "MESH":
+            self.report({"ERROR"}, "No active mesh object")
+            return {"CANCELLED"}
+        return self.execute(context)
+
+    def execute(self, context):
+        obj = context.active_object
+        selected_group_name = obj.mio3qs.selected_vertex_group
+
+        if obj.vertex_groups.get(selected_group_name) is None:
+            return {"CANCELLED"}
+
+        uv_group = obj.mio3qs.uv_group
+        item = uv_group.items.add()
+        item.name = selected_group_name
+        return {"FINISHED"}
+
+
+class OBJECT_OT_mio3qs_update_by_vertex(Operator):
+    bl_idname = "object.mio3qs_update_by_vertex"
+    bl_label = "Update from UV"
+    bl_description = "Update UV Group coords from Active UV"
+    bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
     def poll(cls, context):
@@ -46,103 +67,158 @@ class MIO3QS_OT_uv_group_add(Operator):
         if not obj or obj.type != "MESH":
             return {"CANCELLED"}
 
-        if self.type == "ADD":
-            selected_group_name = obj.mio3qs.selected_vertex_group
-        else:
-            uv_group = context.object.mio3qs.uv_group
-            selected_group_name = uv_group.items[uv_group.active_index].name
+        uv_group = obj.mio3qs.uv_group
+        update_item = uv_group.items[uv_group.active_index]
 
-        if not selected_group_name:
-            self.report({"ERROR"}, "No vertex group selected")
+        bm = bmesh.from_edit_mesh(obj.data)
+        uv_layer = bm.loops.layers.uv.active
+        selected_vert = None
+        for face in bm.faces:
+            for loop in face.loops:
+                if loop[uv_layer].select:
+                    selected_vert = loop[uv_layer].uv
+                    break
+
+        if not selected_vert:
             return {"CANCELLED"}
 
-        selected_vg = obj.vertex_groups.get(selected_group_name)
-        if not selected_vg:
-            self.report({"ERROR"}, "Selected vertex group not found")
-            return {"CANCELLED"}
+        new_uv_coord = selected_vert
+        uv_group = obj.mio3qs.uv_group
 
-        if self.type in {"ADD", "REPLACE", "CURSOR_V"}:
-            # 選択中の頂点のUV座標を取得
-            bm = bmesh.from_edit_mesh(obj.data)
-            uv_layer = bm.loops.layers.uv.verify()
-            selected_vert = None
-            for face in bm.faces:
-                for loop in face.loops:
-                    if loop[uv_layer].select:
-                        selected_vert = loop[uv_layer].uv
-                        break
-
-            if not selected_vert:
-                self.report({"ERROR"}, "No vertex selected")
-                return {"CANCELLED"}
-
-            new_uv_coord = selected_vert
-            uv_group = obj.mio3qs.uv_group
-
-        # 登録済みかチェック
-        update_item = None
-        for item in uv_group.items:
-            if item.name == selected_group_name:
-                update_item = item
-                break
-
-        if self.type == "ADD" and not update_item:
-            new_item = uv_group.items.add()
-
-            new_item.name = selected_group_name
-
-            new_item.uv_coord_u = new_uv_coord.x
-        elif self.type == "REPLACE":
-            update_item.uv_coord_u = new_uv_coord.x
-        elif self.type == "CURSOR_U":
-            update_item.uv_coord_u = context.space_data.cursor_location[0]
-        elif self.type == "CURSOR_V":
-            update_item.uv_offset_v = context.space_data.cursor_location[1] - new_uv_coord.y
-
+        update_item.uv_coord_u = new_uv_coord.x
+        update_item
+        bm.free()
         return {"FINISHED"}
 
 
-class MIO3QS_OT_uv_group_remove(Operator):
-    bl_idname = "mio3qs.group_remove"
+class OBJECT_OT_mio3qs_update_by_cursor(Operator):
+    bl_idname = "object.mio3qs_update_by_cursor"
+    bl_label = "Update from 2D Cursor"
+    bl_description = "Update UV Group coords from 2D Cursor"
+    bl_options = {"REGISTER", "UNDO"}
+    type: EnumProperty(items=[("CURSOR_U", "Cursor", ""), ("CURSOR_V", "Cursor", "")], options={"HIDDEN"})
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.mode == "EDIT"
+
+    def execute(self, context):
+        obj = context.active_object
+        uv_group = obj.mio3qs.uv_group
+        active_index = uv_group.active_index
+        active_group = uv_group.items[active_index]
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        uv_layer = bm.loops.layers.uv.active
+        deform_layer = bm.verts.layers.deform.active
+
+        offset_v = self.calc_offset_v(
+            bm, uv_layer, deform_layer, obj.vertex_groups, active_group.name if active_index != 0 else None
+        )
+
+        cursor = context.space_data.cursor_location
+        if self.type == "CURSOR_U":
+            active_group.uv_coord_u = cursor.x
+        elif self.type == "CURSOR_V":
+            active_group.uv_offset_v = cursor.y - offset_v
+
+        return {"FINISHED"}
+
+    @staticmethod
+    def calc_offset_v(bm, uv_layer, deform_layer, vertex_groups, group_name=None):
+        uv_y_list = []
+        for face in bm.faces:
+            if group_name is None:
+                if all(not any(v[deform_layer].get(vg.index, 0) > 0 for vg in vertex_groups) for v in face.verts):
+                    uv_y_list.extend([loop[uv_layer].uv.y for loop in face.loops])
+            else:
+                vg = vertex_groups.get(group_name)
+                if vg and all(v[deform_layer].get(vg.index, 0) > 0 for v in face.verts):
+                    uv_y_list.extend([loop[uv_layer].uv.y for loop in face.loops])
+
+        return sum(uv_y_list) / len(uv_y_list) if uv_y_list else 0.0
+
+
+class OBJECT_OT_mio3qs_uv_group_remove(Operator):
+    bl_idname = "object.mio3qs_uv_group_remove"
     bl_label = "Remove Item"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        uv_group = context.object.mio3qs.uv_group
+        uv_group = context.active_object.mio3qs.uv_group
         uv_group.items.remove(uv_group.active_index)
         uv_group.active_index = min(max(0, uv_group.active_index - 1), len(uv_group.items) - 1)
         return {"FINISHED"}
 
 
-class MIO3QS_OT_uv_group_move(Operator):
-    bl_idname = "mio3qs.group_move"
+class OBJECT_OT_mio3qs_uv_group_move(Operator):
+    bl_idname = "object.mio3qs_uv_group_move"
     bl_label = "Move Item"
     bl_options = {"REGISTER", "UNDO"}
-
-    direction: EnumProperty(
-        items=[
-            ("UP", "Up", ""),
-            ("DOWN", "Down", ""),
-        ]
-    )
+    direction: EnumProperty(items=[("UP", "Up", ""), ("DOWN", "Down", "")], options={"HIDDEN"})
 
     def execute(self, context):
         obj = context.active_object
         uv_group = obj.mio3qs.uv_group
         index = uv_group.active_index
+        if self.direction == "UP":
+            if index > 1:
+                uv_group.items.move(index, index - 1)
+                uv_group.active_index -= 1
+        elif self.direction == "DOWN":
+            if index < len(uv_group.items) - 1 and index != 0:
+                if index + 1 != 0:
+                    uv_group.items.move(index, index + 1)
+                    uv_group.active_index += 1
+        return {"FINISHED"}
 
-        if self.direction == "UP" and index > 0:
-            uv_group.items.move(index, index - 1)
-            uv_group.active_index -= 1
-        elif self.direction == "DOWN" and index < len(uv_group.items) - 1:
-            uv_group.items.move(index, index + 1)
-            uv_group.active_index += 1
 
+class OBJECT_OT_mio3qs_select_grpup_uvs(Operator):
+    bl_idname = "object.mio3qs_select_grpup_uvs"
+    bl_label = "Select Active"
+    bl_options = {"REGISTER", "UNDO"}
+    index: IntProperty(options={"HIDDEN"})
+
+    def execute(self, context):
+        obj = context.active_object
+        bm = bmesh.from_edit_mesh(obj.data)
+        uv_layer = bm.loops.layers.uv.active
+        deform_layer = bm.verts.layers.deform.active
+        uv_group = obj.mio3qs.uv_group
+
+        if not uv_group.items:
+            return {"CANCELLED"}
+
+        for loop in (l for f in bm.faces for l in f.loops):
+            loop[uv_layer].select = False
+
+        active_uv_item = uv_group.items[self.index]
+        active_vg = obj.vertex_groups.get(active_uv_item.name)
+        active_vg_index = active_vg.index if active_vg else None
+
+        other_vg_indices = {
+            obj.vertex_groups[item.name].index
+            for i, item in enumerate(uv_group.items)
+            if i != self.index and item.name in obj.vertex_groups
+        }
+
+        for face in bm.faces:
+            if active_vg_index is None:
+                if any(not any(v[deform_layer].get(idx, 0) > 0 for idx in other_vg_indices) for v in face.verts):
+                    for loop in face.loops:
+                        loop[uv_layer].select = True
+            else:
+                if all(v[deform_layer].get(active_vg_index, 0) > 0 for v in face.verts):
+                    for loop in face.loops:
+                        loop[uv_layer].select = True
+
+        bmesh.update_edit_mesh(obj.data)
         return {"FINISHED"}
 
 
 class MIO3QS_PT_main(Panel):
-    bl_label = "Mio3 Symmetrize"
+    bl_label = "Mio3 Symmetry"
     bl_idname = "MIO3QS_PT_main"
     bl_space_type = "IMAGE_EDITOR"
     bl_region_type = "UI"
@@ -163,57 +239,55 @@ class MIO3QS_PT_main(Panel):
         row = layout.row(align=True)
         row.prop_search(obj.mio3qs, "selected_vertex_group", obj, "vertex_groups", text="")
         row.scale_x = 0.6
-        row.operator("mio3qs.group_add", text="Add").type = "ADD"
+        row.operator("object.mio3qs_uv_group_add", text="Add")
 
         if uv_group.items and len(uv_group.items) > uv_group.active_index:
-
             row = layout.row()
             row.template_list(
-                "MIO3QS_UL_uv_group_list",
-                "uv_group",
-                uv_group,
-                "items",
-                uv_group,
-                "active_index",
-                rows=3,
+                "MIO3QS_UL_uv_group_list", "uv_group", uv_group, "items", uv_group, "active_index", rows=3
             )
 
             col = row.column(align=True)
-            col.operator("mio3qs.group_remove", icon="REMOVE", text="")
+            col.operator("object.mio3qs_uv_group_remove", icon="REMOVE", text="")
             col.separator()
-            col.operator("mio3qs.group_move", icon="TRIA_UP", text="").direction = "UP"
-            col.operator("mio3qs.group_move", icon="TRIA_DOWN", text="").direction = "DOWN"
+            col.operator("object.mio3qs_uv_group_move", icon="TRIA_UP", text="").direction = "UP"
+            col.operator("object.mio3qs_uv_group_move", icon="TRIA_DOWN", text="").direction = "DOWN"
 
             item = uv_group.items[uv_group.active_index]
 
-            split = layout.split(factor=0.3)
+            col = layout.column(align=True)
+            split = col.split(factor=0.33)
             row = split.row(align=True)
-            row.label(text="Mirror X")
+            row.label(text="Mirror")
             row = split.row(align=True)
             row.prop(item, "uv_coord_u", text="")
-            row.separator()
+            row.separator(factor=0.4)
+            row.operator("object.mio3qs_update_by_cursor", icon="PIVOT_CURSOR", text="").type = "CURSOR_U"
+            row.operator("object.mio3qs_update_by_vertex", icon="UV_VERTEXSEL", text="")
 
-            row.operator("mio3qs.group_add", icon="PIVOT_CURSOR", text="").type = "CURSOR_U"
-            row.operator("mio3qs.group_add", icon="UV_VERTEXSEL", text="").type = "REPLACE"
-
-            split = layout.split(factor=0.3)
+            split = col.split(factor=0.33)
             row = split.row(align=True)
             row.label(text="Offset")
             row = split.row(align=True)
             row.prop(item, "uv_offset_v", text="")
-            row.separator()
-            row.operator("mio3qs.group_add", icon="PIVOT_CURSOR", text="").type = "CURSOR_V"
+            row.separator(factor=0.4)
+            row.operator("object.mio3qs_update_by_cursor", icon="PIVOT_CURSOR", text="").type = "CURSOR_V"
             row.label(text="", icon="BLANK1")
 
         row = layout.row(align=True)
         row.scale_x = 1.3
-        row.operator(
-            "mio3qs.preview_uv",
-            text="Preview UV",
-            icon="AREA_SWAP",
-            depress=MIO3QS_OT_preview_uv.is_running(),
-        )
-        row.operator("mio3qs.preview_uv_refresh", icon="FILE_REFRESH", text="")
+
+        if not uv_group.items or (uv_group.items and uv_group.items[0].name != "__General__"):
+            row = layout.row(align=True)
+            row.alert = True
+            row.operator("object.mio3qs_update_prop", text="Init Default Group", icon="FILE_TICK")
+        else:
+            row.operator(
+                "uv.mio3_symmetry_preview",
+                text="Preview",
+                icon="AREA_SWAP",
+                depress=UV_OT_mio3_symmetry_preview.is_running(),
+            )
 
 
 class MIO3QS_UL_uv_group_list(UIList):
@@ -221,36 +295,85 @@ class MIO3QS_UL_uv_group_list(UIList):
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
-        row.prop(item, "name", icon="GROUP_VERTEX", text="", emboss=False)
+        if index == 0:
+            row.label(text="Default", icon="DOT")
+        else:
+            row.prop(item, "name", icon="GROUP_VERTEX", text="", emboss=False)
+        row.operator("object.mio3qs_select_grpup_uvs", text="", icon="RESTRICT_SELECT_OFF", emboss=False).index = index
 
 
 def update_props(self, context):
-    MIO3QS_OT_preview_uv.redraw(context)
+    UV_OT_mio3_symmetry_preview.redraw(context)
 
 
-class MIO3QS_PG_uv_group_item(PropertyGroup):
-    uv_coord_u: FloatProperty(name="UV X", min=0.0, max=1.0, step=0.5, precision=3, update=update_props)
+class OBJECT_PG_mio3qs_uv_group_item(PropertyGroup):
+    uv_coord_u: FloatProperty(name="UV X", min=0.0, max=1.0, default=0.5, step=0.5, precision=3, update=update_props)
     uv_offset_v: FloatProperty(name="Offset Y", min=-1.0, max=1.0, step=0.5, precision=3, update=update_props)
 
 
-class MIO3QS_PG_uv_group(PropertyGroup):
-    items: CollectionProperty(name="UV Group Items", type=MIO3QS_PG_uv_group_item)
+class OBJECT_PG_mio3qs_uv_group(PropertyGroup):
+    # def callback_active_index(self, context):
+    #     bpy.ops.object.mio3qs_select_grpup_uvs(index=self.active_index)
+
+    items: CollectionProperty(name="UV Group Items", type=OBJECT_PG_mio3qs_uv_group_item)
     active_index: IntProperty()
-    # general: PointerProperty(name="General", type=MIO3QS_PG_uv_group_item)
 
 
-class MIO3QS_PG_main(PropertyGroup):
-    uv_group: PointerProperty(name="UV Group", type=MIO3QS_PG_uv_group)
+class OBJECT_PG_mio3qs(PropertyGroup):
+    uv_group: PointerProperty(name="UV Group", type=OBJECT_PG_mio3qs_uv_group)
     selected_vertex_group: StringProperty(name="Selected Vertex Group")
 
 
+class OBJECT_OT_mio3qs_update_props(Operator):
+    bl_idname = "object.mio3qs_update_prop"
+    bl_label = "Update Props"
+    bl_description = "Update Props by Old Data"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj or obj.type != "MESH":
+            return {"CANCELLED"}
+
+        current_list = []
+        for item in obj.mio3qs.uv_group.items:
+            if item.name == "__General__":
+                continue
+            current_list.append({"name": item.name, "uv_coord_u": item.uv_coord_u, "uv_offset_v": item.uv_offset_v})
+
+        obj.mio3qs.uv_group.items.clear()
+        new_item = obj.mio3qs.uv_group.items.add()
+        new_item.name = "__General__"
+
+        for item in current_list:
+            new_item = obj.mio3qs.uv_group.items.add()
+            new_item.name = item["name"]
+            new_item.uv_coord_u = item["uv_coord_u"]
+            new_item.uv_offset_v = item["uv_offset_v"]
+
+        if "vglist" in obj["mio3qs"]:
+            old_version_list = list(obj["mio3qs"]["vglist"].get("items", []))
+            if old_version_list and not len(current_list):
+                for item in old_version_list:
+                    new_item = obj.mio3qs.uv_group.items.add()
+                    new_item.name = item["vertex_group"]
+                    new_item.uv_coord_u = item["uv_coord_u"]
+                    new_item.uv_offset_v = item["uv_offset_v"]
+            del obj["mio3qs"]["vglist"]
+        return {"FINISHED"}
+
+
 classes = [
-    MIO3QS_PG_uv_group_item,
-    MIO3QS_PG_uv_group,
-    MIO3QS_PG_main,
-    MIO3QS_OT_uv_group_add,
-    MIO3QS_OT_uv_group_remove,
-    MIO3QS_OT_uv_group_move,
+    OBJECT_PG_mio3qs_uv_group_item,
+    OBJECT_PG_mio3qs_uv_group,
+    OBJECT_PG_mio3qs,
+    OBJECT_OT_mio3qs_uv_group_add,
+    OBJECT_OT_mio3qs_uv_group_remove,
+    OBJECT_OT_mio3qs_uv_group_move,
+    OBJECT_OT_mio3qs_update_by_cursor,
+    OBJECT_OT_mio3qs_update_by_vertex,
+    OBJECT_OT_mio3qs_select_grpup_uvs,
+    OBJECT_OT_mio3qs_update_props,
     MIO3QS_UL_uv_group_list,
     MIO3QS_PT_main,
 ]
@@ -259,10 +382,10 @@ classes = [
 def register():
     for c in classes:
         bpy.utils.register_class(c)
-    bpy.types.Object.mio3qs = PointerProperty(type=MIO3QS_PG_main)
+    bpy.types.Object.mio3qs = PointerProperty(type=OBJECT_PG_mio3qs)
 
 
 def unregister():
     del bpy.types.Object.mio3qs
-    for c in classes:
+    for c in reversed(classes):
         bpy.utils.unregister_class(c)

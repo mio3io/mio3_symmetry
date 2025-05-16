@@ -1,33 +1,32 @@
 import bpy
-from bpy.types import Operator
-from bpy.props import EnumProperty, BoolProperty
 import bmesh
 import time
 import numpy as np
+from bpy.types import Operator
+from bpy.props import EnumProperty, BoolProperty
 
 TMP_VG_NAME = "Mio3qsTempVg"
 TMP_DATA_TRANSFER_NAME = "Mio3qsTempDataTransfer"
+SUFFIX = [("_L", "_R"), (".L", ".R"), ("-L", "-R"), ("Left", "Right"), ("_l", "_r"), (".l", ".r"), ("-l", "-r"), ("left", "right")] # fmt: skip
 
 
-class MIO3_OT_quick_symmetrize(Operator):
+class OBJECT_OT_mio3_symmetry(Operator):
     bl_idname = "object.mio3_symmetry"
     bl_label = "Symmetrize & Recovery"
     bl_description = "Symmetrize meshes, shape keys, vertex groups, UVs, and normals"
     bl_options = {"REGISTER", "UNDO"}
 
-    mode: EnumProperty(
-        name="Mode",
-        items=[("+X", "+X → -X", ""), ("-X", "-X → +X", "")],
-    )
+    mode: EnumProperty(name="Mode", default="+X", items=[("-X", "-X → +X", ""), ("+X", "-X ← +X", "")])
     facial: BoolProperty(name="UnSymmetrize L/R Facial ShapeKeys", default=False)
     normal: BoolProperty(name="Normal", default=True)
-    uvmap: BoolProperty(name="UVMap", default=False)
+    uvmap: BoolProperty(name="UVMap", default=True)
     center: BoolProperty(name="Origin to Center", default=True)
     remove_mirror_mod: BoolProperty(name="Remove Mirror Modifier", default=True)
-    suffix_pairs = [("_L", "_R"), (".L", ".R"), ("-L", "-R"), ("Left", "Right")]
-    main_verts = []
-    sub_verts = []
-    replace_names = {
+
+    _suffix_pairs = SUFFIX
+    _main_verts = []
+    _sub_verts = []
+    _replace_names = {
         "ウィンク": "MMD_Wink_R",
         "ウィンク右": "MMD_Wink_L",
         "ウィンク２": "MMD_Wink2_R",
@@ -87,16 +86,13 @@ class MIO3_OT_quick_symmetrize(Operator):
         orgcopy.data = obj.data.copy()
         context.collection.objects.link(orgcopy)
 
-        # 対称化
         bm = bmesh.new()
         bm.from_mesh(obj.data)
-        bmesh.ops.symmetrize(
-            bm,
-            input=bm.verts[:] + bm.edges[:] + bm.faces[:],
-            direction="X" if self.mode == "+X" else "-X",
-            use_shapekey=True,
-            dist=0.00001,
-        )
+
+        # 対称化
+        direction = "X" if self.mode == "+X" else "-X"
+        data = bm.verts[:] + bm.edges[:] + bm.faces[:]
+        bmesh.ops.symmetrize(bm, input=data, direction=direction, use_shapekey=True, dist=1e-5)
 
         for elem in bm.verts[:] + bm.edges[:] + bm.faces[:]:
             elem.hide_set(False)
@@ -146,7 +142,7 @@ class MIO3_OT_quick_symmetrize(Operator):
 
         vart_count_2 = len(obj.data.vertices)
         stime = time.time() - start_time
-        self.report({"INFO"}, f"Mio3 Symmetry Vertex Count {vart_count_1} → {vart_count_2}  Time: {stime:.4f}")  # fmt:skip
+        self.report({"INFO"}, f"Mio3 Symmetry {vart_count_1} → {vart_count_2}  Time: {stime:.4f}")  # fmt:skip
         return {"FINISHED"}
 
     def create_temp_vgroup(self, obj, bm):
@@ -169,49 +165,48 @@ class MIO3_OT_quick_symmetrize(Operator):
 
     # UV
     def symm_uv(self, obj, bm):
+        uv_group = obj.mio3qs.uv_group
         deform_layer = bm.verts.layers.deform.active
         uv_layer = bm.loops.layers.uv.active
-        if not uv_layer:
+        if not uv_layer or not deform_layer:
             return
 
-        def mirror_uv(faces, u_co, offset_v):
-            for face in faces:
-                for loop in face.loops:
-                    uv = loop[uv_layer]
-                    if abs(uv.uv.x - u_co) < 0.0001:
-                        uv.uv.x = u_co
-                    uv.uv.x = u_co + (u_co - uv.uv.x)
-                    if offset_v:
-                        uv.uv.y = uv.uv.y + offset_v
+        group_map = {}
+        for item in uv_group.items:
+            if vg := obj.vertex_groups.get(item.name):
+                group_map[vg.index] = item
 
-        face_groups = {}
-        processed_faces = set()
-        select_condition = lambda x: x < 0 if self.mode == "+X" else x > 0
-        for item in obj.mio3qs.uv_group.items:
-            vg = obj.vertex_groups.get(item.name)
-            if vg:
-                face_groups[item.name] = set()
-                for f in bm.faces:
-                    if f not in processed_faces:
-                        # グループに登録されている
-                        try:
-                            if all(vg.index in v[deform_layer] for v in f.verts):
-                                # 片側の面
-                                if any(select_condition(v.co.x) for v in f.verts):
-                                    face_groups[item.name].add(f)
-                                processed_faces.add(f)
-                        except:
-                            pass
+        if len(uv_group.items) and uv_group.items[0].name == "__General__":
+            general_u, general_v = uv_group.items[0].uv_coord_u, uv_group.items[0].uv_offset_v
+        else:
+            general_u, general_v = 0.5, 0.0
 
-        # グループごとに処理
-        for item in obj.mio3qs.uv_group.items:
-            if item.name in face_groups:
-                mirror_uv(face_groups[item.name], item.uv_coord_u, item.uv_offset_v)
+        if self.mode == "+X":
+            side_check = lambda x: x < 0.0
+        else:
+            side_check = lambda x: x > 0.0
 
-        # General
-        general_faces = set(bm.faces) - processed_faces
-        selected_general_faces = [f for f in general_faces if any(select_condition(v.co.x) for v in f.verts)]
-        mirror_uv(selected_general_faces, 0.5, 0)
+        for face in bm.faces:
+            if not any(side_check(v.co.x) for v in face.verts):
+                continue
+
+            match_group = None
+            for vg_idx, item in group_map.items():
+                if all(vg_idx in v[deform_layer] for v in face.verts):
+                    match_group = item
+                    break
+
+            if match_group:
+                u_co, off_v = match_group.uv_coord_u, match_group.uv_offset_v
+            else:
+                u_co, off_v = general_u, general_v
+
+            for loop in face.loops:
+                uv = loop[uv_layer].uv
+                dx = uv.x - u_co
+                uv.x = u_co if abs(dx) < 1e-5 else u_co - dx
+                if off_v:
+                    uv.y += off_v
 
     # 頂点ウェイト
     def symm_vgroups(self, obj, bm):
@@ -262,7 +257,7 @@ class MIO3_OT_quick_symmetrize(Operator):
 
     # 表情の非対称化
     def unsymm_facial(self, obj):
-        suffix_pairs = self.suffix_pairs
+        suffix_pairs = self._suffix_pairs
         if not obj.data.shape_keys:
             return
 
@@ -275,7 +270,7 @@ class MIO3_OT_quick_symmetrize(Operator):
         else:
             pairs = suffix_pairs
 
-        self.rename_shape_keys(obj, self.replace_names)
+        self.rename_shape_keys(obj, self._replace_names)
 
         basis = obj.data.shape_keys.reference_key
         basis_coords = np.zeros(len(basis.data) * 3, dtype=np.float32)
@@ -303,9 +298,7 @@ class MIO3_OT_quick_symmetrize(Operator):
 
                         for idx in mask_indices:
                             coord_idx = idx * 3
-                            target_coords[coord_idx : coord_idx + 3] = source_coords[
-                                coord_idx : coord_idx + 3
-                            ]
+                            target_coords[coord_idx : coord_idx + 3] = source_coords[coord_idx : coord_idx + 3]
                         target_kb.data.foreach_set("co", target_coords)
 
                         for idx in mask_indices:
@@ -314,7 +307,7 @@ class MIO3_OT_quick_symmetrize(Operator):
                         source_kb.data.foreach_set("co", source_coords)
                         break
 
-        reverse_names = {v: k for k, v in self.replace_names.items()}
+        reverse_names = {v: k for k, v in self._replace_names.items()}
         self.rename_shape_keys(obj, reverse_names)
 
     def rename_shape_keys(self, obj, dicts):
@@ -341,7 +334,7 @@ class MIO3_OT_quick_symmetrize(Operator):
                     extra_suffix = ".{}".format(split_name[1])
 
             current_suffix = None
-            for l_suffix, r_suffix in self.suffix_pairs:
+            for l_suffix, r_suffix in self._suffix_pairs:
                 if base_name.endswith(l_suffix if self.mode == "+X" else r_suffix):
                     current_suffix = l_suffix if self.mode == "+X" else r_suffix
                     opposite_suffix = r_suffix if self.mode == "+X" else l_suffix
@@ -374,12 +367,12 @@ class MIO3_OT_quick_symmetrize(Operator):
         layout.prop(self, "facial")
 
 
-classes = [MIO3_OT_quick_symmetrize]
+classes = [OBJECT_OT_mio3_symmetry]
 
 
 def menu_transform(self, context):
     self.layout.separator()
-    self.layout.operator(MIO3_OT_quick_symmetrize.bl_idname)
+    self.layout.operator(OBJECT_OT_mio3_symmetry.bl_idname)
 
 
 def register():

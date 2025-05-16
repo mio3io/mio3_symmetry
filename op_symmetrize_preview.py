@@ -2,14 +2,10 @@ import bpy
 import bmesh
 import gpu
 from gpu_extras.batch import batch_for_shader
-from bpy.types import Operator
+from bpy.types import Operator, SpaceImageEditor
+import time
 
-mio3qs_preview_msgbus = object()
-
-
-def callback_mode_change(cls, context):
-    MIO3QS_OT_preview_uv.handle_remove()
-    bpy.msgbus.clear_by_owner(mio3qs_preview_msgbus)
+msgbus_owner = object()
 
 
 def reload_view(context):
@@ -19,79 +15,35 @@ def reload_view(context):
                 area.tag_redraw()
 
 
-class MIO3QS_OT_preview_uv_refresh(Operator):
-    bl_idname = "mio3qs.preview_uv_refresh"
-    bl_label = "Refresh Mesh"
-    bl_description = "Refresh Mesh"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.active_object
-        return obj is not None and obj.mode == "EDIT"
-
-    def execute(self, context):
-        MIO3QS_OT_preview_uv.update_mesh(context)
-        reload_view(context)
-        return {"FINISHED"}
-
-
-class MIO3QS_OT_preview_uv(Operator):
-    bl_idname = "mio3qs.preview_uv"
+class UV_OT_mio3_symmetry_preview(Operator):
+    bl_idname = "uv.mio3_symmetry_preview"
     bl_label = "Preview UV"
     bl_description = "Preview UV"
     bl_options = {"REGISTER", "UNDO"}
 
-    __handle = None
-    __shader = None
-    __region = None
-    __color = (0.5, 0.5, 0.5, 1)
-    __vertices = []
+    _handle = None
+    _color = (0.5, 0.5, 0.5, 1)
+    _vertices = []
+
+    _active_u = 0.5
+    _active_v = 0
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
         return obj is not None and obj.mode == "EDIT"
 
-    def execute(self, context):
-        context.scene.tool_settings.use_uv_select_sync = False
-        if not MIO3QS_OT_preview_uv.is_running():
-            self.handle_add(context)
-        else:
-            MIO3QS_OT_preview_uv.handle_remove()
-        reload_view(context)
-        return {"FINISHED"}
-
     @classmethod
-    def __draw(cls, context):
-        viewport_vertices = [
-            cls.__region.view2d.view_to_region(v[0], v[1], clip=False) for v in cls.__vertices
-        ]
-        batch = batch_for_shader(cls.__shader, "LINES", {"pos": viewport_vertices})
-        cls.__shader.bind()
-        cls.__shader.uniform_float("color", cls.__color)
-        batch.draw(cls.__shader)
+    def remove_handler(cls):
+        if cls.is_running():
+            SpaceImageEditor.draw_handler_remove(cls._handle, "WINDOW")
+            cls._handle = None
+        bpy.msgbus.clear_by_owner(msgbus_owner)
+        reload_view(bpy.context)
 
     @classmethod
     def is_running(cls):
-        return cls.__handle is not None
-
-    @classmethod
-    def handle_add(cls, context):
-        cls.__handle = bpy.types.SpaceImageEditor.draw_handler_add(
-            cls.__draw, (context,), "WINDOW", "POST_PIXEL"
-        )
-        cls.__shader = gpu.shader.from_builtin("UNIFORM_COLOR")
-        cls.update_mesh(context)
-
-        bpy.msgbus.subscribe_rna(
-            key=(bpy.types.Object, "mode"),
-            owner=mio3qs_preview_msgbus,
-            args=(cls, context),
-            notify=callback_mode_change,
-        )
-        area = next(a for a in context.screen.areas if a.type == "IMAGE_EDITOR")
-        cls.__region = next(r for r in area.regions if r.type == "WINDOW")
+        return cls._handle is not None
 
     @classmethod
     def redraw(cls, context):
@@ -99,85 +51,142 @@ class MIO3QS_OT_preview_uv(Operator):
             cls.update_mesh(context)
             reload_view(context)
 
+    def invoke(self, context, event):
+        cls = self.__class__
+        is_running = cls.is_running()
+        cls.remove_handler()
+        if is_running:
+            return {"FINISHED"}
+        
+        if not context.active_object.data.uv_layers:
+            self.report({"WARNING"}, "No UV layer found")
+            return {"CANCELLED"}
+
+        cls._handle = SpaceImageEditor.draw_handler_add(self.draw_2d, ((cls, context)), "WINDOW", "POST_PIXEL")
+
+        def callback():
+            cls.remove_handler()
+
+        bpy.msgbus.subscribe_rna(key=(bpy.types.Object, "mode"), owner=msgbus_owner, args=(), notify=callback)
+
+        cls.redraw(context)
+        context.window_manager.modal_handler_add(self)
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context, event):
+        cls = self.__class__
+        if not cls.is_running():
+            return {"FINISHED"}
+        if event.type == "LEFTMOUSE" and event.value == "RELEASE":
+            self.update_mesh(context)
+            reload_view(context)
+        return {"PASS_THROUGH"}
+
+    @staticmethod
+    def draw_2d(cls, context):
+        region = context.region
+        v2d = region.view2d
+
+        viewport_vertices = [v2d.view_to_region(v[0], v[1], clip=False) for v in cls._vertices]
+        shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+        batch = batch_for_shader(shader, "LINES", {"pos": viewport_vertices})
+        shader.bind()
+        shader.uniform_float("color", cls._color)
+        batch.draw(shader)
+
+        cx, _ = v2d.view_to_region(cls._active_u, 0.5, clip=False)
+        line_pos = [(cx, 0), (cx, region.height)]
+        line_shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+        line_batch = batch_for_shader(line_shader, "LINES", {"pos": line_pos})
+        line_shader.bind()
+        line_shader.uniform_float("color", (0.4, 0.4, 0.4, 1))
+        line_batch.draw(line_shader)
+
+        cx, cy = v2d.view_to_region(cls._active_u, cls._active_v, clip=False)
+        size = 20
+        cross_lines = [(cx - size, cy), (cx + size, cy), (cx, cy - size), (cx, cy + size)]
+        cross_shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+        cross_batch = batch_for_shader(cross_shader, "LINES", {"pos": cross_lines})
+        cross_shader.bind()
+        cross_shader.uniform_float("color", (0.40, 0.80, 0.90, 1.0))  # (1.00, 0.73, 0.00, 1.0)
+        cross_batch.draw(cross_shader)
+
     @classmethod
     def update_mesh(cls, context):
-        cls.__vertices = []
-        if cls.is_running():
-            obj = context.active_object
-            bm = bmesh.from_edit_mesh(obj.data)
-            uv_layer = bm.loops.layers.uv.active
-            deform_layer = bm.verts.layers.deform.active
+        # start_time = time.time()
+        cls._vertices = []
 
-            def mirror_uv(uv, u_co, offset_v):
-                mirrored_uv = uv.copy()
-                if abs(mirrored_uv.x - u_co) < 0.0001:
-                    mirrored_uv.x = u_co
-                mirrored_uv.x = u_co + (u_co - mirrored_uv.x)
-                if offset_v:
-                    mirrored_uv.y += offset_v
-                return mirrored_uv
+        obj = context.active_object
+        bm = bmesh.from_edit_mesh(obj.data)
+        uv_layer = bm.loops.layers.uv.active
+        deform_layer = bm.verts.layers.deform.active
+        uv_group = obj.mio3qs.uv_group
+        if not uv_group.items:
+            return
 
-            face_groups = {}
-            processed_faces = set()
+        general_u = uv_group.items[0].uv_coord_u
+        general_v = uv_group.items[0].uv_offset_v
 
-            for item in obj.mio3qs.uv_group.items:
-                vg = obj.vertex_groups.get(item.name)
-                if vg:
-                    face_groups[item.name] = set()
-                    for f in bm.faces:
-                        if f not in processed_faces:
-                            try:
-                                if all(vg.index in v[deform_layer] for v in f.verts):
-                                    face_groups[item.name].add(f)
-                                    processed_faces.add(f)
-                            except:
-                                pass
+        active_index = uv_group.active_index
+        active_group = uv_group.items[active_index]
+        cls._active_u = active_group.uv_coord_u
+        cls._active_v = active_group.uv_offset_v
+        is_general = active_index == 0
 
-            for face in bm.faces:
-                poly_uvs = [loop[uv_layer].uv.copy() for loop in face.loops]
-                if face in processed_faces:
-                    for item in obj.mio3qs.uv_group.items:
-                        if face in face_groups.get(item.name, set()):
-                            poly_uvs = [mirror_uv(uv, item.uv_coord_u, item.uv_offset_v) for uv in poly_uvs]
-                            break
-                else:
-                    poly_uvs = [mirror_uv(uv, 0.5, 0) for uv in poly_uvs]
+        uv_group_cache = []
+        for item in uv_group.items:
+            if vg := obj.vertex_groups.get(item.name):
+                uv_group_cache.append((vg.index, item.uv_coord_u, item.uv_offset_v, item.name))
 
-                for i in range(len(poly_uvs)):
-                    cls.__vertices.extend([poly_uvs[i], poly_uvs[(i + 1) % len(poly_uvs)]])
+        sum_uv_y = 0.0
+        cnt_uv_y = 0
 
-            bm.free()
+        for f in bm.faces:
+            u_co, off_v, match_name = general_u, general_v, None
 
-    @classmethod
-    def handle_remove(cls):
-        if cls.is_running():
-            bpy.types.SpaceImageEditor.draw_handler_remove(cls.__handle, "WINDOW")
-            cls.__handle = None
-            cls.__shader = None
-            cls.__region = None
-            cls.__vertices = []
-            bpy.msgbus.clear_by_owner(mio3qs_preview_msgbus)
+            for idx, u, v, name in uv_group_cache:
+                if all(vt[deform_layer].get(idx, 0) > 0 for vt in f.verts):
+                    u_co, off_v, match_name = u, v, name
+                    break
+
+            # アクティブ or 一般グループのYを集計
+            if (match_name == active_group.name) or (match_name is None and is_general):
+                for loop in f.loops:
+                    sum_uv_y += loop[uv_layer].uv.y
+                    cnt_uv_y += 1
+
+            poly_uvs = [cls.mirror_uv(loop[uv_layer].uv.copy(), u_co, off_v) for loop in f.loops]
+            for i in range(len(poly_uvs)):
+                cls._vertices.extend((poly_uvs[i], poly_uvs[(i + 1) % len(poly_uvs)]))
+
+        if cnt_uv_y:
+            cls._active_v += sum_uv_y / cnt_uv_y
+
+        # print("time:", time.time() - start_time)
+
+    @staticmethod
+    def mirror_uv(uv, u_co, offset_v):
+        dx = uv.x - u_co
+        uv.x = u_co if abs(dx) < 0.0001 else u_co - dx
+        if offset_v:
+            uv.y += offset_v
+        return uv
 
     @classmethod
     def unregister(cls):
-        cls.handle_remove()
+        cls.remove_handler()
 
 
 @bpy.app.handlers.persistent
 def load_handler(dummy):
-    MIO3QS_OT_preview_uv.handle_remove()
-
-
-classes = [MIO3QS_OT_preview_uv, MIO3QS_OT_preview_uv_refresh]
+    UV_OT_mio3_symmetry_preview.remove_handler()
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    bpy.utils.register_class(UV_OT_mio3_symmetry_preview)
     bpy.app.handlers.load_post.append(load_handler)
 
 
 def unregister():
     bpy.app.handlers.load_post.remove(load_handler)
-    for c in classes:
-        bpy.utils.unregister_class(c)
+    bpy.utils.unregister_class(UV_OT_mio3_symmetry_preview)
