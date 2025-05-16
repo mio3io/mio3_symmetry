@@ -3,7 +3,8 @@ import bmesh
 import gpu
 from gpu_extras.batch import batch_for_shader
 from bpy.types import Operator, SpaceImageEditor
-import time
+from .globals import NAME_ATTR_GROUP
+
 
 msgbus_owner = object()
 
@@ -24,6 +25,7 @@ class UV_OT_mio3_symmetry_preview(Operator):
     _handle = None
     _color = (0.5, 0.5, 0.5, 1)
     _vertices = []
+    _polygons = []
 
     _active_u = 0.5
     _active_v = 0
@@ -57,7 +59,7 @@ class UV_OT_mio3_symmetry_preview(Operator):
         cls.remove_handler()
         if is_running:
             return {"FINISHED"}
-        
+
         if not context.active_object.data.uv_layers:
             self.report({"WARNING"}, "No UV layer found")
             return {"CANCELLED"}
@@ -87,6 +89,22 @@ class UV_OT_mio3_symmetry_preview(Operator):
         region = context.region
         v2d = region.view2d
 
+        all_tris = []
+        for poly in cls._polygons:
+            if len(poly) < 3:
+                continue
+            for i in range(1, len(poly) - 1):
+                all_tris.extend([poly[0], poly[i], poly[i + 1]])
+
+        verts = [v2d.view_to_region(v[0], v[1], clip=False) for v in all_tris]
+        gpu.state.blend_set("ALPHA")
+        shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+        shader.bind()
+        shader.uniform_float("color", (0.18, 0.55, 0.67, 0.1))
+        batch = batch_for_shader(shader, "TRIS", {"pos": verts})
+        batch.draw(shader)
+        gpu.state.blend_set("NONE")
+
         viewport_vertices = [v2d.view_to_region(v[0], v[1], clip=False) for v in cls._vertices]
         shader = gpu.shader.from_builtin("UNIFORM_COLOR")
         batch = batch_for_shader(shader, "LINES", {"pos": viewport_vertices})
@@ -105,64 +123,59 @@ class UV_OT_mio3_symmetry_preview(Operator):
         cx, cy = v2d.view_to_region(cls._active_u, cls._active_v, clip=False)
         size = 20
         cross_lines = [(cx - size, cy), (cx + size, cy), (cx, cy - size), (cx, cy + size)]
+        gpu.state.line_width_set(2)
         cross_shader = gpu.shader.from_builtin("UNIFORM_COLOR")
         cross_batch = batch_for_shader(cross_shader, "LINES", {"pos": cross_lines})
         cross_shader.bind()
         cross_shader.uniform_float("color", (0.40, 0.80, 0.90, 1.0))  # (1.00, 0.73, 0.00, 1.0)
         cross_batch.draw(cross_shader)
+        gpu.state.line_width_set(1)
 
     @classmethod
     def update_mesh(cls, context):
-        # start_time = time.time()
         cls._vertices = []
+        cls._polygons = []
 
         obj = context.active_object
         bm = bmesh.from_edit_mesh(obj.data)
         uv_layer = bm.loops.layers.uv.active
-        deform_layer = bm.verts.layers.deform.active
+        p_layer = bm.faces.layers.int.get(NAME_ATTR_GROUP)
         uv_group = obj.mio3qs.uv_group
         if not uv_group.items:
             return
-
-        general_u = uv_group.items[0].uv_coord_u
-        general_v = uv_group.items[0].uv_offset_v
 
         active_index = uv_group.active_index
         active_group = uv_group.items[active_index]
         cls._active_u = active_group.uv_coord_u
         cls._active_v = active_group.uv_offset_v
-        is_general = active_index == 0
-
-        uv_group_cache = []
-        for item in uv_group.items:
-            if vg := obj.vertex_groups.get(item.name):
-                uv_group_cache.append((vg.index, item.uv_coord_u, item.uv_offset_v, item.name))
 
         sum_uv_y = 0.0
         cnt_uv_y = 0
 
         for f in bm.faces:
-            u_co, off_v, match_name = general_u, general_v, None
+            uv_group_index = f[p_layer]
+            u_co = uv_group.items[uv_group_index].uv_coord_u
+            off_v = uv_group.items[uv_group_index].uv_offset_v
 
-            for idx, u, v, name in uv_group_cache:
-                if all(vt[deform_layer].get(idx, 0) > 0 for vt in f.verts):
-                    u_co, off_v, match_name = u, v, name
-                    break
-
-            # アクティブ or 一般グループのYを集計
-            if (match_name == active_group.name) or (match_name is None and is_general):
+            # アクティブグループのYを集計
+            if active_index == uv_group_index:
+                face_uvs = []
                 for loop in f.loops:
+                    uv = cls.mirror_uv(loop[uv_layer].uv.copy(), u_co, off_v)
+                    face_uvs.append(uv)
                     sum_uv_y += loop[uv_layer].uv.y
                     cnt_uv_y += 1
-
-            poly_uvs = [cls.mirror_uv(loop[uv_layer].uv.copy(), u_co, off_v) for loop in f.loops]
-            for i in range(len(poly_uvs)):
-                cls._vertices.extend((poly_uvs[i], poly_uvs[(i + 1) % len(poly_uvs)]))
+                if len(face_uvs) >= 3:
+                    cls._polygons.append(face_uvs)
+                for i in range(len(face_uvs)):
+                    cls._vertices.extend((face_uvs[i], face_uvs[(i + 1) % len(face_uvs)]))
+            else:
+                poly_uvs = [cls.mirror_uv(loop[uv_layer].uv.copy(), u_co, off_v) for loop in f.loops]
+                for i in range(len(poly_uvs)):
+                    cls._vertices.extend((poly_uvs[i], poly_uvs[(i + 1) % len(poly_uvs)]))
 
         if cnt_uv_y:
             cls._active_v += sum_uv_y / cnt_uv_y
-
-        # print("time:", time.time() - start_time)
 
     @staticmethod
     def mirror_uv(uv, u_co, offset_v):

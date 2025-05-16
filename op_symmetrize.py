@@ -4,6 +4,7 @@ import time
 import numpy as np
 from bpy.types import Operator
 from bpy.props import EnumProperty, BoolProperty
+from .globals import NAME_ATTR_GROUP
 
 TMP_VG_NAME = "Mio3qsTempVg"
 TMP_DATA_TRANSFER_NAME = "Mio3qsTempDataTransfer"
@@ -166,47 +167,37 @@ class OBJECT_OT_mio3_symmetry(Operator):
     # UV
     def symm_uv(self, obj, bm):
         uv_group = obj.mio3qs.uv_group
-        deform_layer = bm.verts.layers.deform.active
         uv_layer = bm.loops.layers.uv.active
-        if not uv_layer or not deform_layer:
+        p_layer = bm.faces.layers.int.get(NAME_ATTR_GROUP)
+        if not uv_layer:
             return
-
-        group_map = {}
-        for item in uv_group.items:
-            if vg := obj.vertex_groups.get(item.name):
-                group_map[vg.index] = item
-
-        if len(uv_group.items) and uv_group.items[0].name == "__General__":
-            general_u, general_v = uv_group.items[0].uv_coord_u, uv_group.items[0].uv_offset_v
-        else:
-            general_u, general_v = 0.5, 0.0
 
         if self.mode == "+X":
             side_check = lambda x: x < 0.0
         else:
             side_check = lambda x: x > 0.0
 
-        for face in bm.faces:
-            if not any(side_check(v.co.x) for v in face.verts):
-                continue
-
-            match_group = None
-            for vg_idx, item in group_map.items():
-                if all(vg_idx in v[deform_layer] for v in face.verts):
-                    match_group = item
-                    break
-
-            if match_group:
-                u_co, off_v = match_group.uv_coord_u, match_group.uv_offset_v
-            else:
-                u_co, off_v = general_u, general_v
-
-            for loop in face.loops:
-                uv = loop[uv_layer].uv
-                dx = uv.x - u_co
-                uv.x = u_co if abs(dx) < 1e-5 else u_co - dx
-                if off_v:
-                    uv.y += off_v
+        if not p_layer:
+            for face in bm.faces:
+                if not any(side_check(v.co.x) for v in face.verts):
+                    continue
+                for loop in face.loops:
+                    uv = loop[uv_layer].uv
+                    dx = uv.x - 0.5
+                    uv.x = 0.5 if abs(dx) < 1e-5 else 0.5 - dx
+        else:
+            for face in bm.faces:
+                if not any(side_check(v.co.x) for v in face.verts):
+                    continue
+                uv_group_idx = face[p_layer]
+                u_co = uv_group.items[uv_group_idx].uv_coord_u
+                off_v = uv_group.items[uv_group_idx].uv_offset_v
+                for loop in face.loops:
+                    uv = loop[uv_layer].uv
+                    dx = uv.x - u_co
+                    uv.x = u_co if abs(dx) < 1e-5 else u_co - dx
+                    if off_v:
+                        uv.y += off_v
 
     # 頂点ウェイト
     def symm_vgroups(self, obj, bm):
