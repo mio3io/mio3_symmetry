@@ -11,10 +11,15 @@
 このアドオンはミラーモディファイアを適用するアドオンではありませんが概ね似たような結果になります。
 ミラー適用後にもメッシュを編集したり左右対称にしたいというケースにも使用できます。
 
-## 導入方法
+## ダウンロード
 
-[Code > Download ZIP](https://github.com/mio3io/Mio3Symmetry/archive/master.zip) から ZIP ファイルをダウンロードします。
-Blender の `Edit > Preferences > Addons > Install` を開き、ダウンロードしたアドオンの ZIP ファイルを選択してインストールボタンを押します。インストール後、該当するアドオンの左側についているチェックボックスを ON にします。
+https://addon.mio3io.com/
+
+「Self-Hosted Extensions」のダウンロードからドラッグ＆ドロップしてインストールできます
+
+## 互換性
+
+Blender Ver 4.2 以降
 
 ## 機能
 
@@ -36,7 +41,13 @@ UV マップのミラーリングは通常は中心座標 0.5 で対称化しま
 
 ## 場所
 
-オブジェクトのメニューに「対称化＆リカバリー」が追加されます
+### 対称化
+
+3D View > Menu > Object
+
+### UV グループ編集
+
+UV Editor > SideBar > Mio3
 
 # Info
 
