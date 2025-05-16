@@ -1,4 +1,5 @@
 import bpy
+import bmesh
 from bpy.types import Operator, Panel, UIList, PropertyGroup
 from bpy.props import (
     FloatProperty,
@@ -8,11 +9,24 @@ from bpy.props import (
     PointerProperty,
     CollectionProperty,
 )
-import bmesh
 from .op_symmetrize_preview import UV_OT_mio3_symmetry_preview
 
 
-class OBJECT_OT_mio3qs_uv_group_add(Operator):
+class Mio3qsUVGroupOperator:
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == "MESH" and obj.mode == "EDIT"
+
+    def invoke(self, context, event):
+        obj = context.active_object
+        if not obj or obj.type != "MESH":
+            self.report({"ERROR"}, "No active mesh object")
+            return {"CANCELLED"}
+        return self.execute(context)
+
+
+class OBJECT_OT_mio3qs_uv_group_add(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_uv_group_add"
     bl_label = "Add Group"
     bl_description = "Add a weighted vertex group"
@@ -21,14 +35,7 @@ class OBJECT_OT_mio3qs_uv_group_add(Operator):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj is not None and obj.mio3qs.selected_vertex_group
-
-    def invoke(self, context, event):
-        obj = context.active_object
-        if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "No active mesh object")
-            return {"CANCELLED"}
-        return self.execute(context)
+        return obj is not None and obj.type == "MESH" and obj.mio3qs.selected_vertex_group
 
     def execute(self, context):
         obj = context.active_object
@@ -43,24 +50,11 @@ class OBJECT_OT_mio3qs_uv_group_add(Operator):
         return {"FINISHED"}
 
 
-class OBJECT_OT_mio3qs_update_by_vertex(Operator):
+class OBJECT_OT_mio3qs_update_by_vertex(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_update_by_vertex"
     bl_label = "Update from UV"
     bl_description = "Update UV Group coords from Active UV"
     bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.active_object
-        return obj is not None and obj.mode == "EDIT"
-
-    def invoke(self, context, event):
-        obj = context.active_object
-        if not obj or obj.type != "MESH":
-            self.report({"ERROR"}, "No active mesh object")
-            return {"CANCELLED"}
-
-        return self.execute(context)
 
     def execute(self, context):
         obj = context.active_object
@@ -91,17 +85,12 @@ class OBJECT_OT_mio3qs_update_by_vertex(Operator):
         return {"FINISHED"}
 
 
-class OBJECT_OT_mio3qs_update_by_cursor(Operator):
+class OBJECT_OT_mio3qs_update_by_cursor(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_update_by_cursor"
     bl_label = "Update from 2D Cursor"
     bl_description = "Update UV Group coords from 2D Cursor"
     bl_options = {"REGISTER", "UNDO"}
     type: EnumProperty(items=[("CURSOR_U", "Cursor", ""), ("CURSOR_V", "Cursor", "")], options={"HIDDEN"})
-
-    @classmethod
-    def poll(cls, context):
-        obj = context.active_object
-        return obj is not None and obj.mode == "EDIT"
 
     def execute(self, context):
         obj = context.active_object
@@ -140,7 +129,7 @@ class OBJECT_OT_mio3qs_update_by_cursor(Operator):
         return sum(uv_y_list) / len(uv_y_list) if uv_y_list else 0.0
 
 
-class OBJECT_OT_mio3qs_uv_group_remove(Operator):
+class OBJECT_OT_mio3qs_uv_group_remove(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_uv_group_remove"
     bl_label = "Remove Item"
     bl_options = {"REGISTER", "UNDO"}
@@ -152,7 +141,7 @@ class OBJECT_OT_mio3qs_uv_group_remove(Operator):
         return {"FINISHED"}
 
 
-class OBJECT_OT_mio3qs_uv_group_move(Operator):
+class OBJECT_OT_mio3qs_uv_group_move(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_uv_group_move"
     bl_label = "Move Item"
     bl_options = {"REGISTER", "UNDO"}
@@ -174,7 +163,7 @@ class OBJECT_OT_mio3qs_uv_group_move(Operator):
         return {"FINISHED"}
 
 
-class OBJECT_OT_mio3qs_select_grpup_uvs(Operator):
+class OBJECT_OT_mio3qs_select_grpup_uvs(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_select_grpup_uvs"
     bl_label = "Select Active"
     bl_options = {"REGISTER", "UNDO"}
@@ -324,7 +313,7 @@ class OBJECT_PG_mio3qs(PropertyGroup):
     selected_vertex_group: StringProperty(name="Selected Vertex Group")
 
 
-class OBJECT_OT_mio3qs_update_props(Operator):
+class OBJECT_OT_mio3qs_update_props(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_update_prop"
     bl_label = "Update Props"
     bl_description = "Update Props by Old Data"
