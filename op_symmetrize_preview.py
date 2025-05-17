@@ -18,8 +18,8 @@ def reload_view(context):
 
 class UV_OT_mio3_symmetry_preview(Operator):
     bl_idname = "uv.mio3_symmetry_preview"
-    bl_label = "Preview UV"
-    bl_description = "Preview UV"
+    bl_label = "Preview"
+    bl_description = "Preview"
     bl_options = {"REGISTER", "UNDO"}
 
     _handle = None
@@ -141,7 +141,7 @@ class UV_OT_mio3_symmetry_preview(Operator):
 
         uv_group = obj.mio3qs.uv_group
         if not uv_group.items:
-            return
+            return cls.remove_handler()
 
         active_index = uv_group.active_index
         active_item = uv_group.items[active_index]

@@ -30,17 +30,20 @@ class Mio3qsUVGroupOperator:
 class OBJECT_OT_mio3qs_uv_group_add(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_uv_group_add"
     bl_label = "Add Group"
-    bl_description = "Add a weighted vertex group"
+    bl_description = "Create a new UV group"
     bl_options = {"REGISTER", "UNDO"}
+    input_name: StringProperty(name="Name", options={"SKIP_SAVE", "HIDDEN"}, default="")
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
         return obj is not None and obj.type == "MESH"
 
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
     def execute(self, context):
         obj = context.active_object
-        new_group_name = obj.mio3qs.new_name
 
         if NAME_ATTR_GROUP not in obj.data.attributes:
             obj.data.attributes.new(name=NAME_ATTR_GROUP, type="INT", domain="FACE")
@@ -50,19 +53,26 @@ class OBJECT_OT_mio3qs_uv_group_add(Mio3qsUVGroupOperator, Operator):
             item = uv_group.items.add()
             item.name = "Default"
 
-        if new_group_name == "":
-            new_group_name = "Group " + str(len(obj.mio3qs.uv_group.items))
+        new_group_name = "Group {}".format(len(uv_group.items)) if not self.input_name else self.input_name
 
         item = uv_group.items.add()
         item.name = new_group_name
-        obj.mio3qs.new_name = ""
         uv_group.active_index = len(uv_group.items) - 1
+        obj.data.update()
         return {"FINISHED"}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.ui_units_x = 12
+        split = layout.split(factor=0.4)
+        split.label(text="Group Name")
+        split.prop(self, "input_name", text="")
 
 
 class OBJECT_OT_mio3qs_uv_group_remove(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_uv_group_remove"
-    bl_label = "Remove Item"
+    bl_label = "Remove Group"
+    bl_description = "Remove an active group"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -160,8 +170,8 @@ class OBJECT_OT_mio3qs_uv_group_assign(Mio3qsUVGroupOperator, Operator):
         return {"FINISHED"}
 
 
-class OBJECT_OT_mio3qs_uv_group_remove_from(Mio3qsUVGroupOperator, Operator):
-    bl_idname = "object.mio3qs_uv_group_remove_from"
+class OBJECT_OT_mio3qs_uv_group_unassign(Mio3qsUVGroupOperator, Operator):
+    bl_idname = "object.mio3qs_uv_group_unassign"
     bl_label = "Remove Group"
     bl_description = "Remove from selected UVs"
     bl_options = {"REGISTER", "UNDO"}
@@ -185,7 +195,7 @@ class OBJECT_OT_mio3qs_uv_group_remove_from(Mio3qsUVGroupOperator, Operator):
 class OBJECT_OT_mio3qs_update_by_vertex(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_update_by_vertex"
     bl_label = "Update from UV"
-    bl_description = "Update UV Group coords from Active UV"
+    bl_description = "Update Group coords from Active UV"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -215,7 +225,7 @@ class OBJECT_OT_mio3qs_update_by_vertex(Mio3qsUVGroupOperator, Operator):
 class OBJECT_OT_mio3qs_update_by_cursor(Mio3qsUVGroupOperator, Operator):
     bl_idname = "object.mio3qs_update_by_cursor"
     bl_label = "Update from 2D Cursor"
-    bl_description = "Update UV Group coords from 2D Cursor"
+    bl_description = "Update Group coords from 2D Cursor"
     bl_options = {"REGISTER", "UNDO"}
     type: EnumProperty(items=[("CURSOR_U", "Cursor", ""), ("CURSOR_V", "Cursor", "")], options={"HIDDEN"})
 
@@ -290,17 +300,21 @@ class MIO3QS_PT_main(Panel):
         obj = context.active_object
         uv_group = obj.mio3qs.uv_group
 
-        layout.label(text="UV Groups", icon="MOD_MIRROR")
+        split = layout.split(factor=0.5, align=True)
 
-        row = layout.row(align=True)
-        row.prop(obj.mio3qs, "new_name", text="")
-        row.scale_x = 0.6
-        row.operator("object.mio3qs_uv_group_add", text="Add")
+        split.label(text="UV Group", icon="MOD_MIRROR")
+        if NAME_ATTR_GROUP not in obj.data.attributes:
+            row = split.row(align=True)
+            row.alert = True
+            row.operator("object.mio3qs_update_prop", text="Init Group")
+        else:
+            split.operator("uv.mio3_symmetry_preview", depress=UV_OT_mio3_symmetry_preview.is_running())
 
         row = layout.row()
-        row.template_list("MIO3QS_UL_uv_group_list", "uv_group", uv_group, "items", uv_group, "active_index", rows=3)
+        row.template_list("MIO3QS_UL_uv_groups", "uv_group", uv_group, "items", uv_group, "active_index", rows=3)
 
         col = row.column(align=True)
+        col.operator("object.mio3qs_uv_group_add", icon="ADD", text="")
         col.operator("object.mio3qs_uv_group_remove", icon="REMOVE", text="")
         col.separator()
         col.operator("object.mio3qs_uv_group_move", icon="TRIA_UP", text="").direction = "UP"
@@ -310,11 +324,11 @@ class MIO3QS_PT_main(Panel):
             item = uv_group.items[uv_group.active_index]
 
             row = layout.row(align=True)
-            row.operator("object.mio3qs_uv_group_assign", text="Assign")
-            row.operator("object.mio3qs_uv_group_remove_from", text="Remove")
+            row.operator("object.mio3qs_uv_group_assign", text="Assign", icon="PINNED")
+            row.operator("object.mio3qs_uv_group_unassign", text="Remove", icon="UNPINNED")
 
             col = layout.column(align=True)
-            split = col.split(factor=0.33)
+            split = col.split(factor=0.35)
             row = split.row(align=True)
             row.label(text="Mirror")
             row = split.row(align=True)
@@ -323,7 +337,7 @@ class MIO3QS_PT_main(Panel):
             row.operator("object.mio3qs_update_by_cursor", icon="PIVOT_CURSOR", text="").type = "CURSOR_U"
             row.operator("object.mio3qs_update_by_vertex", icon="UV_VERTEXSEL", text="")
 
-            split = col.split(factor=0.33)
+            split = col.split(factor=0.35)
             row = split.row(align=True)
             row.label(text="Offset")
             row = split.row(align=True)
@@ -332,24 +346,9 @@ class MIO3QS_PT_main(Panel):
             row.operator("object.mio3qs_update_by_cursor", icon="PIVOT_CURSOR", text="").type = "CURSOR_V"
             row.label(text="", icon="BLANK1")
 
-        row = layout.row(align=True)
-        row.scale_x = 1.3
 
-        if NAME_ATTR_GROUP not in obj.data.attributes:
-            row = layout.row(align=True)
-            row.alert = True
-            row.operator("object.mio3qs_update_prop", text="Init Default Group", icon="FILE_TICK")
-        else:
-            row.operator(
-                "uv.mio3_symmetry_preview",
-                text="Preview",
-                icon="AREA_SWAP",
-                depress=UV_OT_mio3_symmetry_preview.is_running(),
-            )
-
-
-class MIO3QS_UL_uv_group_list(UIList):
-    bl_idname = "MIO3QS_UL_uv_group_list"
+class MIO3QS_UL_uv_groups(UIList):
+    bl_idname = "MIO3QS_UL_uv_groups"
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
@@ -371,12 +370,11 @@ class OBJECT_PG_mio3qs_uv_group_item(PropertyGroup):
 
 class OBJECT_PG_mio3qs_uv_group(PropertyGroup):
     items: CollectionProperty(name="UV Group Items", type=OBJECT_PG_mio3qs_uv_group_item)
-    active_index: IntProperty()
+    active_index: IntProperty(name="Active Index")
 
 
 class OBJECT_PG_mio3qs(PropertyGroup):
     uv_group: PointerProperty(name="UV Group", type=OBJECT_PG_mio3qs_uv_group)
-    new_name: StringProperty(name="Name")
 
 
 class OBJECT_OT_mio3qs_update_props(Mio3qsUVGroupOperator, Operator):
@@ -410,6 +408,7 @@ class OBJECT_OT_mio3qs_update_props(Mio3qsUVGroupOperator, Operator):
             new_item.name = item["name"]
             new_item.uv_coord_u = item["uv_coord_u"]
             new_item.uv_offset_v = item["uv_offset_v"]
+        UV_OT_mio3_symmetry_preview.redraw(context)
         return {"FINISHED"}
 
 
@@ -421,12 +420,12 @@ classes = [
     OBJECT_OT_mio3qs_uv_group_remove,
     OBJECT_OT_mio3qs_uv_group_move,
     OBJECT_OT_mio3qs_uv_group_assign,
-    OBJECT_OT_mio3qs_uv_group_remove_from,
+    OBJECT_OT_mio3qs_uv_group_unassign,
     OBJECT_OT_mio3qs_update_by_cursor,
     OBJECT_OT_mio3qs_update_by_vertex,
     OBJECT_OT_mio3qs_select_grpup_uvs,
     OBJECT_OT_mio3qs_update_props,
-    MIO3QS_UL_uv_group_list,
+    MIO3QS_UL_uv_groups,
     MIO3QS_PT_main,
 ]
 

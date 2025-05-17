@@ -4,11 +4,10 @@ import time
 import numpy as np
 from bpy.types import Operator
 from bpy.props import EnumProperty, BoolProperty
-from .globals import NAME_ATTR_GROUP
+from .globals import NAME_ATTR_GROUP, SUFFIX
 
 TMP_VG_NAME = "Mio3qsTempVg"
 TMP_DATA_TRANSFER_NAME = "Mio3qsTempDataTransfer"
-SUFFIX = [("_L", "_R"), (".L", ".R"), ("-L", "-R"), ("Left", "Right"), ("_l", "_r"), (".l", ".r"), ("-l", "-r"), ("left", "right")] # fmt: skip
 
 
 class OBJECT_OT_mio3_symmetry(Operator):
