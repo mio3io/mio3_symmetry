@@ -10,4 +10,3 @@ blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]
 website = "https://github.com/mio3io/mio3_symmetry"
 copyright = ["2025 Mio"]
-
