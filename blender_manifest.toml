@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 id = "mio3_symmetry"
 name = "Mio3 Symmetry"
-version = "0.9.4"
+version = "0.10.0"
 tagline = "Mesh Symmetry Tools"
 maintainer = "Mio"
 type = "add-on"

@@ -3,17 +3,6 @@ from . import op_symmetrize
 from . import op_symmetrize_group
 from . import op_symmetrize_preview
 
-bl_info = {
-    "name": "Mio3 Symmetry",
-    "author": "mio",
-    "version": (0, 9, 3),
-    "blender": (4, 2, 0),
-    "location": "View3D > Object",
-    "description": "Symmetrize meshes, shape keys, vertex groups, UVs, and normals while maintaining multi-resolution",
-    "category": "Object",
-}
-
-
 translation_dict = {
     "ja_JP": {
         ("Operator", "Symmetrize & Recovery"): "対称化＆リカバリー",
