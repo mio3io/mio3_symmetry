@@ -23,12 +23,18 @@ translation_dict = {
         ("*", "Origin to Center"): "原点を基準に対称化",
         ("*", "Object is not a mesh"): "オブジェクトがメッシュではありません",
         ("*", "Symmetrize meshes, shape keys, vertex groups, UVs, and normals while maintaining multi-resolution"): "マルチレゾを維持してメッシュ・シェイプキー・頂点グループ・UV・法線を対称化",
-        ("*", "Add a weighted vertex group"): "ウェイトを設定した頂点グループを追加する",
 
+        ("Operator", "Add Group"): "グループを追加",
+        ("*", "Create a new UV group"): "新しいUVグループを作成する",
+        ("Operator", "Remove Group"): "グループを削除",
+        ("*", "Remove an active group"): "アクティブなグループを削除する",
         ("Operator", "Update from 2D Cursor"): "2Dカーソルからグループを更新",
-        ("*", "Update UV Group coords from 2D Cursor"): "2DカーソルからUVグループの座標を更新します",
+        ("*", "Update Group coords from 2D Cursor"): "2Dカーソルからグループの座標を更新します",
         ("Operator", "Update from UV"): "UVからグループを更新",
-        ("*", "Update UV Group coords from Active UV"): "アクティブなUVからUVグループの座標を更新します",
+        ("*", "Update Group coords from Active UV"): "アクティブなUVからグループの座標を更新します",
+
+        ("Operator", "Un Assign"): "割り当て解除",
+        ("Operator", "Preview"): "プレビュー",
 
         ("*", ""): "",
 
