@@ -293,7 +293,7 @@ class MIO3QS_PT_main(Panel):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj is not None and obj.mode == "EDIT"
+        return obj is not None and obj.mode == "EDIT" and obj.type == "MESH"
 
     def draw(self, context):
         layout = self.layout
