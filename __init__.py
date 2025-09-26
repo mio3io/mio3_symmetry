@@ -2,6 +2,8 @@ import bpy
 from . import op_symmetrize
 from . import op_symmetrize_group
 from . import op_symmetrize_preview
+from . import op_normal_symmetrize
+
 
 translation_dict = {
     "ja_JP": {
@@ -35,6 +37,7 @@ modules = [
     op_symmetrize,
     op_symmetrize_preview,
     op_symmetrize_group,
+    op_normal_symmetrize,
 ]
 
 
