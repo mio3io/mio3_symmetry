@@ -26,7 +26,7 @@ class OBJECT_OT_mio3_symmetry(Operator):
     _suffix_pairs = SUFFIX
     _main_verts = []
     _sub_verts = []
-    _replace_names = {
+    _replace_name_map = {
         "ウィンク": "MMD_Wink_R",
         "ウィンク右": "MMD_Wink_L",
         "ウィンク２": "MMD_Wink2_R",
@@ -110,6 +110,8 @@ class OBJECT_OT_mio3_symmetry(Operator):
 
         if self.normal and obj.data.has_custom_normals:
             vg = self.create_temp_vgroup(obj, bm)
+        else:
+            vg = None
 
         bm.to_mesh(obj.data)
         bm.free()
@@ -133,8 +135,8 @@ class OBJECT_OT_mio3_symmetry(Operator):
 
         obj.active_shape_key_index = active_shape_key_index
 
-        if TMP_VG_NAME in obj.vertex_groups:
-            obj.vertex_groups.remove(obj.vertex_groups[TMP_VG_NAME])
+        if vg and vg.name in obj.vertex_groups:
+            obj.vertex_groups.remove(obj.vertex_groups[vg.name])
 
         copy_mesh = orgcopy.data
         bpy.data.objects.remove(orgcopy, do_unlink=True)
@@ -151,17 +153,13 @@ class OBJECT_OT_mio3_symmetry(Operator):
         if TMP_VG_NAME in obj.vertex_groups:
             vg = obj.vertex_groups[TMP_VG_NAME]
             obj.vertex_groups.remove(vg)
-
-        self.vg = obj.vertex_groups.new(name=TMP_VG_NAME)
+        vg = obj.vertex_groups.new(name=TMP_VG_NAME)
 
         for v in bm.verts:
             if v.select:
                 if v.co.x != 0.0:
-                    v[deform_layer][self.vg.index] = 1.0
-
-        bm.to_mesh(obj.data)
-        obj.data.update()
-        return self.vg
+                    v[deform_layer][vg.index] = 1.0
+        return vg
 
     # UV
     def symm_uv(self, obj, bm):
@@ -239,7 +237,7 @@ class OBJECT_OT_mio3_symmetry(Operator):
             transfer_modifier.use_max_distance = True
             transfer_modifier.max_distance = 0.0001
             transfer_modifier.data_types_loops = {"CUSTOM_NORMAL"}
-            with bpy.context.temp_override(active_object=obj):
+            with bpy.context.temp_override(object=obj):
                 bpy.ops.object.modifier_apply(modifier=transfer_modifier.name)
 
         finally:
@@ -247,7 +245,6 @@ class OBJECT_OT_mio3_symmetry(Operator):
 
     # 表情の非対称化
     def unsymm_facial(self, obj):
-        suffix_pairs = self._suffix_pairs
         if not obj.data.shape_keys:
             return
 
@@ -255,12 +252,9 @@ class OBJECT_OT_mio3_symmetry(Operator):
         if not key_blocks:
             return
 
-        if self.mode == "+X":
-            pairs = [(r, l) for l, r in suffix_pairs]
-        else:
-            pairs = suffix_pairs
+        pairs = [(r, l) for l, r in self._suffix_pairs] if self.mode == "+X" else self._suffix_pairs
 
-        self.rename_shape_keys(obj, self._replace_names)
+        self.rename_shape_keys(obj, self._replace_name_map)
 
         basis = obj.data.shape_keys.reference_key
         basis_coords = np.zeros(len(basis.data) * 3, dtype=np.float32)
@@ -297,14 +291,14 @@ class OBJECT_OT_mio3_symmetry(Operator):
                         source_kb.data.foreach_set("co", source_coords)
                         break
 
-        reverse_names = {v: k for k, v in self._replace_names.items()}
-        self.rename_shape_keys(obj, reverse_names)
+        reverse_name_map = {v: k for k, v in self._replace_name_map.items()}
+        self.rename_shape_keys(obj, reverse_name_map)
 
-    def rename_shape_keys(self, obj, dicts):
+    def rename_shape_keys(self, obj, map):
         if obj.data.shape_keys:
             for key in obj.data.shape_keys.key_blocks:
-                if key.name in dicts:
-                    key.name = dicts[key.name]
+                if key.name in map:
+                    key.name = map[key.name]
 
     def symmetric_group_mapping(self, obj):
         symmetric_groups = {}
