@@ -1,8 +1,11 @@
 import bpy
+from bpy.types import AddonPreferences
+from bpy.props import BoolProperty, StringProperty
 from . import op_symmetrize
 from . import op_symmetrize_group
 from . import op_symmetrize_preview
 from . import op_normal_symmetrize
+from .utils import check_register, check_unregister
 
 
 translation_dict = {
@@ -26,11 +29,30 @@ translation_dict = {
 
         ("Operator", "Un Assign"): "割り当て解除",
         ("Operator", "Preview"): "プレビュー",
-
-        ("*", ""): "",
-
     }  # fmt: skip
 }
+
+
+class PREFERENCE_mio3symm(AddonPreferences):
+    bl_idname = __package__
+
+    def update_use_uv_group(self, context):
+        if self.use_uv_group:
+            check_register(op_symmetrize_group.MIO3QS_PT_main)
+        else:
+            check_unregister(op_symmetrize_group.MIO3QS_PT_main)
+
+    use_uv_group: BoolProperty(
+        name="UV Group",
+        default=False,
+        description="Use UV Group for Symmetrize Preview Operator",
+        update=update_use_uv_group,
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_decorate = False
+        layout.prop(self, "use_uv_group")
 
 
 modules = [
@@ -42,12 +64,18 @@ modules = [
 
 
 def register():
+    bpy.utils.register_class(PREFERENCE_mio3symm)
+
     for module in modules:
         module.register()
+
     bpy.app.translations.register(__name__, translation_dict)
 
 
 def unregister():
     bpy.app.translations.unregister(__name__)
+
     for module in reversed(modules):
         module.unregister()
+
+    bpy.utils.unregister_class(PREFERENCE_mio3symm)

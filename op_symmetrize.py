@@ -4,7 +4,8 @@ import time
 import numpy as np
 from bpy.types import Operator
 from bpy.props import EnumProperty, BoolProperty
-from .globals import NAME_ATTR_GROUP, SUFFIX
+from .globals import NAME_ATTR_GROUP
+from .utils_mirror import analyze_lr_name, get_mirror_name
 
 TMP_VG_NAME = "Mio3qsTempVg"
 TMP_DATA_TRANSFER_NAME = "Mio3qsTempDataTransfer"
@@ -23,7 +24,6 @@ class OBJECT_OT_mio3_symmetry(Operator):
     center: BoolProperty(name="Origin to Center", default=True)
     remove_mirror_mod: BoolProperty(name="Remove Mirror Modifier", default=True)
 
-    _suffix_pairs = SUFFIX
     _main_verts = []
     _sub_verts = []
     _replace_name_map = {
@@ -110,8 +110,10 @@ class OBJECT_OT_mio3_symmetry(Operator):
 
         if self.normal and obj.data.has_custom_normals:
             vg = self.create_temp_vgroup(obj, bm)
+            vg_name = vg.name # UnicodeDecodeError 対策
         else:
             vg = None
+            vg_name = None
 
         bm.to_mesh(obj.data)
         bm.free()
@@ -135,8 +137,8 @@ class OBJECT_OT_mio3_symmetry(Operator):
 
         obj.active_shape_key_index = active_shape_key_index
 
-        if vg and vg.name in obj.vertex_groups:
-            obj.vertex_groups.remove(obj.vertex_groups[vg.name])
+        if vg and vg_name in obj.vertex_groups:
+            obj.vertex_groups.remove(obj.vertex_groups[vg_name])
 
         copy_mesh = orgcopy.data
         bpy.data.objects.remove(orgcopy, do_unlink=True)
@@ -252,44 +254,51 @@ class OBJECT_OT_mio3_symmetry(Operator):
         if not key_blocks:
             return
 
-        pairs = [(r, l) for l, r in self._suffix_pairs] if self.mode == "+X" else self._suffix_pairs
-
         self.rename_shape_keys(obj, self._replace_name_map)
 
         basis = obj.data.shape_keys.reference_key
         basis_coords = np.zeros(len(basis.data) * 3, dtype=np.float32)
         basis.data.foreach_get("co", basis_coords)
 
+        target_side_label = "right" if self.mode == "+X" else "left"
+
         for i, target_kb in enumerate(key_blocks):
-            for target_suffix, source_suffix in pairs:
-                if target_kb.name.endswith(target_suffix):
-                    source_name = target_kb.name[: -len(target_suffix)] + source_suffix
-                    if source_name in key_blocks:
+            info = analyze_lr_name(target_kb.name)
+            if not info or not info.get("has_side"):
+                continue
 
-                        vertex_mask = np.array([v.select for v in obj.data.vertices], dtype=bool)
-                        mask_indices = np.where(vertex_mask)[0]
+            if info["side_label"] != target_side_label:
+                continue
 
-                        if len(mask_indices) == 0:
-                            continue
+            source_name = get_mirror_name(target_kb.name)
+            if not source_name or source_name == target_kb.name:
+                continue
 
-                        source_kb = key_blocks[source_name]
+            source_kb = key_blocks.get(source_name)
+            if source_kb is None:
+                continue
 
-                        source_coords = np.zeros(len(source_kb.data) * 3, dtype=np.float32)
-                        source_kb.data.foreach_get("co", source_coords)
+            vertex_mask = np.array([v.select for v in obj.data.vertices], dtype=bool)
+            mask_indices = np.where(vertex_mask)[0]
 
-                        target_coords = np.zeros(len(target_kb.data) * 3, dtype=np.float32)
-                        target_kb.data.foreach_get("co", target_coords)
+            if len(mask_indices) == 0:
+                continue
 
-                        for idx in mask_indices:
-                            coord_idx = idx * 3
-                            target_coords[coord_idx : coord_idx + 3] = source_coords[coord_idx : coord_idx + 3]
-                        target_kb.data.foreach_set("co", target_coords)
+            source_coords = np.zeros(len(source_kb.data) * 3, dtype=np.float32)
+            source_kb.data.foreach_get("co", source_coords)
 
-                        for idx in mask_indices:
-                            coord_idx = idx * 3
-                            source_coords[coord_idx : coord_idx + 3] = basis_coords[coord_idx : coord_idx + 3]
-                        source_kb.data.foreach_set("co", source_coords)
-                        break
+            target_coords = np.zeros(len(target_kb.data) * 3, dtype=np.float32)
+            target_kb.data.foreach_get("co", target_coords)
+
+            for idx in mask_indices:
+                coord_idx = idx * 3
+                target_coords[coord_idx : coord_idx + 3] = source_coords[coord_idx : coord_idx + 3]
+            target_kb.data.foreach_set("co", target_coords)
+
+            for idx in mask_indices:
+                coord_idx = idx * 3
+                source_coords[coord_idx : coord_idx + 3] = basis_coords[coord_idx : coord_idx + 3]
+            source_kb.data.foreach_set("co", source_coords)
 
         reverse_name_map = {v: k for k, v in self._replace_name_map.items()}
         self.rename_shape_keys(obj, reverse_name_map)
@@ -305,39 +314,29 @@ class OBJECT_OT_mio3_symmetry(Operator):
         name_to_group = {vg.name: vg for vg in obj.vertex_groups}
         processed_vgroup = set()
 
-        for vgroup_name in obj.vertex_groups.keys():
+        for vgroup in obj.vertex_groups:
+            vgroup_name = vgroup.name
             if vgroup_name in processed_vgroup:
                 continue
 
-            base_name = vgroup_name
-            extra_suffix = ""
-            if "." in vgroup_name:
-                split_name = vgroup_name.rsplit(".", 1)
-                if split_name[1] not in {"L", "R"}:
-                    base_name = split_name[0]
-                    extra_suffix = ".{}".format(split_name[1])
+            info = analyze_lr_name(vgroup_name)
+            if not info or not info.get("has_side"):
+                symmetric_groups[vgroup.index] = vgroup.index
+                processed_vgroup.add(vgroup_name)
+                continue
 
-            current_suffix = None
-            for l_suffix, r_suffix in self._suffix_pairs:
-                if base_name.endswith(l_suffix if self.mode == "+X" else r_suffix):
-                    current_suffix = l_suffix if self.mode == "+X" else r_suffix
-                    opposite_suffix = r_suffix if self.mode == "+X" else l_suffix
-                    break
+            opposite_name = get_mirror_name(vgroup_name)
+            opposite_group = name_to_group.get(opposite_name) if opposite_name else None
 
-            if current_suffix:
-                name_without_suffix = base_name[: -len(current_suffix)]
-                opposite_name = "{}{}{}".format(name_without_suffix, opposite_suffix, extra_suffix)
+            if not opposite_group or opposite_name == vgroup_name:
+                symmetric_groups[vgroup.index] = vgroup.index
+                processed_vgroup.add(vgroup_name)
+                continue
 
-                if opposite_name in name_to_group:
-                    current_group = name_to_group[vgroup_name]
-                    opposite_group = name_to_group[opposite_name]
-                    symmetric_groups[current_group.index] = opposite_group.index
-                    symmetric_groups[opposite_group.index] = current_group.index
-                    processed_vgroup.add(vgroup_name)
-                    processed_vgroup.add(opposite_name)
-            else:
-                current_group = name_to_group[vgroup_name]
-                symmetric_groups[current_group.index] = current_group.index
+            symmetric_groups[vgroup.index] = opposite_group.index
+            symmetric_groups[opposite_group.index] = vgroup.index
+            processed_vgroup.add(vgroup_name)
+            processed_vgroup.add(opposite_name)
 
         return symmetric_groups
 

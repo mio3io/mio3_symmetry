@@ -11,6 +11,7 @@ from bpy.props import (
 )
 from .op_symmetrize_preview import UV_OT_mio3_symmetry_preview
 from .globals import NAME_ATTR_GROUP
+from .utils import check_register, check_unregister
 
 
 class Mio3qsUVGroupOperator:
@@ -426,17 +427,21 @@ classes = [
     OBJECT_OT_mio3qs_select_grpup_uvs,
     OBJECT_OT_mio3qs_update_props,
     MIO3QS_UL_uv_groups,
-    MIO3QS_PT_main,
 ]
 
 
 def register():
+    prefs = bpy.context.preferences.addons[__package__].preferences
     for c in classes:
-        bpy.utils.register_class(c)
+        check_register(c)
+    
+    if prefs.use_uv_group:
+        check_register(MIO3QS_PT_main)
     bpy.types.Object.mio3qs = PointerProperty(type=OBJECT_PG_mio3qs)
 
 
 def unregister():
     del bpy.types.Object.mio3qs
+    check_unregister(MIO3QS_PT_main)
     for c in reversed(classes):
-        bpy.utils.unregister_class(c)
+        check_unregister(c)

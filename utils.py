@@ -1,3 +1,4 @@
+import bpy
 import time
 from bpy.types import Operator
 from mathutils import Vector, kdtree
@@ -19,6 +20,24 @@ def is_exist_menu(cls, target_function):
     if target_function in draw_funcs:
         return True
     return False
+
+
+def check_register(cls):
+    is_exist = hasattr(bpy.types, cls.__name__)
+    if not is_exist:
+        try:
+            bpy.utils.register_class(cls)
+        except:
+            pass
+
+
+def check_unregister(cls):
+    is_exist = hasattr(bpy.types, cls.__name__)
+    if is_exist:
+        try:
+            bpy.utils.unregister_class(cls)
+        except:
+            pass
 
 
 class Mio3SYMDebug:
