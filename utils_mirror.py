@@ -1,5 +1,8 @@
 import re
 
+LEFT_SIDE_TOKENS = {"L", "l", "Left", "left"}
+RIGHT_SIDE_TOKENS = {"R", "r", "Right", "right"}
+
 SIDE_MAP = {
     "L": "R",
     "R": "L",
@@ -9,50 +12,46 @@ SIDE_MAP = {
     "Right": "Left",
     "left": "right",
     "right": "left",
-    "LEFT": "RIGHT",
-    "RIGHT": "LEFT",
 }
-
-SIDE_TOKENS = ("L", "R", "l", "r", "Left", "Right", "left", "right", "LEFT", "RIGHT")
-LONG_SIDE_TOKENS = ("Left", "Right", "left", "right", "LEFT", "RIGHT")
-
-LEFT_SIDE_TOKENS = {"L", "Left", "l", "left", "LEFT"}
-RIGHT_SIDE_TOKENS = {"R", "Right", "r", "right", "RIGHT"}
-
-SIDE_PATTERN = "|".join(map(re.escape, SIDE_TOKENS))
-LONG_SIDE_PATTERN = "|".join(map(re.escape, LONG_SIDE_TOKENS))
-
 
 PATTERNS = [
     {  # _L, .R など＠セパレーター付き
         "id": 1,
-        "pattern": re.compile(r"(?P<base>.+)(?P<sep>[._\-])(?P<side>(" + SIDE_PATTERN + r"))(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
-        "side_type": "suffix",
+        "pattern": re.compile(r"(?P<base>.+)(?P<sep>[._\-])(?P<side>L|R|l|r|Left|Right|left|right)(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
+        "pattern_type": "suffix",
     },
     {  # L_aaa など＠セパレーター付き
         "id": 2,
-        "pattern": re.compile(r"^(?P<side>(" + SIDE_PATTERN + r"))(?P<sep>[._-])(?P<base>.+)(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
-        "side_type": "prefix",
+        "pattern": re.compile(r"^(?P<side>L|R|l|r|Left|Right|left|right)(?P<sep>[._-])(?P<base>.+)(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
+        "pattern_type": "prefix",
     },
     {  # UpperArmLeft など
         "id": 3,
-        "pattern": re.compile(r"(?P<base>.+?)(?P<side>(" + LONG_SIDE_PATTERN + r"))(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
-        "side_type": "suffix",
+        "pattern": re.compile(r"(?P<base>.+?)(?P<side>Left|Right)(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
+        "pattern_type": "suffix",
     },
     {  # LeftUpperArm, leftUpperArm など
         "id": 4,
-        "pattern": re.compile(r"^(?P<side>(" + LONG_SIDE_PATTERN + r"))(?P<base>[^a-z].+?)(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
-        "side_type": "prefix",
+        "pattern": re.compile(r"^(?P<side>Left|Right|left|right)(?P<base>[^a-z].+?)(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
+        "pattern_type": "prefix",
     },
     {  # 左右なし
         "id": 5,
         "pattern": re.compile(r"(?P<base>.+?)(?P<opt>[._]\d+(?:_end|\.end)?)?$"),
-        "side_type": "none",
+        "pattern_type": "none",
     },
 ]  # fmt: skip
 
 
-def _normalize_side_label(side):
+def _compose_name(base, sep, side_token, opt, pattern_type):
+    if pattern_type == "suffix":
+        return "{}{}{}{}".format(base, sep, side_token, opt)
+    if pattern_type == "prefix":
+        return "{}{}{}{}".format(side_token, sep, base, opt)
+    return base + opt
+
+
+def normalize_side_kind(side):
     if not side:
         return None
     if side in LEFT_SIDE_TOKENS:
@@ -62,15 +61,8 @@ def _normalize_side_label(side):
     return None
 
 
-def _compose_name(base, sep, side_token, opt, side_type):
-    if side_type == "suffix":
-        return f"{base}{sep}{side_token}{opt}"
-    if side_type == "prefix":
-        return f"{side_token}{sep}{base}{opt}"
-    return base + opt
-
-
-def analyze_lr_name(name):
+def parse_side_name(name):
+    """左右パターンの名前を解析して返す"""
     for pat in PATTERNS:
         if not (m := pat["pattern"].match(name)):
             continue
@@ -80,17 +72,17 @@ def analyze_lr_name(name):
         sep = group.get("sep") or ""
         base = group.get("base") or ""
         opt = group.get("opt") or ""
-        side_label = _normalize_side_label(side) if pat["side_type"] != "none" else None
+        side_kind = normalize_side_kind(side) if pat["pattern_type"] != "none" else None
 
         info = {
             "pattern_id": pat["id"],
-            "side_type": pat["side_type"],
+            "pattern_type": pat["pattern_type"],
             "base": base,
             "side": side,
             "sep": sep,
             "opt": opt,
-            "side_label": side_label,
-            "has_side": pat["side_type"] != "none" and side_label is not None,
+            "side_kind": side_kind,
+            "has_side": pat["pattern_type"] != "none" and side_kind is not None,
         }
         mirror_side = SIDE_MAP.get(side)
         if mirror_side:
@@ -101,19 +93,20 @@ def analyze_lr_name(name):
 
 
 def get_mirror_name(name):
-    info = analyze_lr_name(name)
+    """名前から左右反転した名前を返す"""
+    info = parse_side_name(name)
     if not info or not info.get("has_side"):
-        return name
+        return None
 
     mirror_side = info.get("mirror_side")
     if not mirror_side:
-        return name
+        return None
 
-    return _compose_name(info["base"], info["sep"], mirror_side, info["opt"], info["side_type"])
+    return _compose_name(info["base"], info["sep"], mirror_side, info["opt"], info["pattern_type"])
 
 
 def is_lr_name(name, base):
-    info = analyze_lr_name(name)
+    info = parse_side_name(name)
     if not info or not info.get("has_side"):
         return False
     return info["base"].casefold() == base.casefold()

@@ -5,7 +5,7 @@ import numpy as np
 from bpy.types import Operator
 from bpy.props import EnumProperty, BoolProperty
 from .globals import NAME_ATTR_GROUP
-from .utils_mirror import analyze_lr_name, get_mirror_name
+from .utils_mirror import parse_side_name, get_mirror_name
 
 TMP_VG_NAME = "Mio3qsTempVg"
 TMP_DATA_TRANSFER_NAME = "Mio3qsTempDataTransfer"
@@ -260,18 +260,18 @@ class OBJECT_OT_mio3_symmetry(Operator):
         basis_coords = np.zeros(len(basis.data) * 3, dtype=np.float32)
         basis.data.foreach_get("co", basis_coords)
 
-        target_side_label = "right" if self.mode == "+X" else "left"
+        target_side_kind = "right" if self.mode == "+X" else "left"
 
         for i, target_kb in enumerate(key_blocks):
-            info = analyze_lr_name(target_kb.name)
+            info = parse_side_name(target_kb.name)
             if not info or not info.get("has_side"):
                 continue
 
-            if info["side_label"] != target_side_label:
+            if info["side_kind"] != target_side_kind:
                 continue
 
             source_name = get_mirror_name(target_kb.name)
-            if not source_name or source_name == target_kb.name:
+            if not source_name:
                 continue
 
             source_kb = key_blocks.get(source_name)
@@ -319,13 +319,13 @@ class OBJECT_OT_mio3_symmetry(Operator):
             if vgroup_name in processed_vgroup:
                 continue
 
-            info = analyze_lr_name(vgroup_name)
+            info = parse_side_name(vgroup_name)
             if not info or not info.get("has_side"):
                 symmetric_groups[vgroup.index] = vgroup.index
                 processed_vgroup.add(vgroup_name)
                 continue
 
-            opposite_name = get_mirror_name(vgroup_name)
+            opposite_name = get_mirror_name(vgroup_name) or vgroup_name
             opposite_group = name_to_group.get(opposite_name) if opposite_name else None
 
             if not opposite_group or opposite_name == vgroup_name:
@@ -346,8 +346,8 @@ class OBJECT_OT_mio3_symmetry(Operator):
         layout.prop(self, "normal")
         layout.prop(self, "uvmap")
         layout.prop(self, "center")
-        layout.prop(self, "remove_mirror_mod")
         layout.prop(self, "facial")
+        layout.prop(self, "remove_mirror_mod")
 
 
 classes = [OBJECT_OT_mio3_symmetry]
