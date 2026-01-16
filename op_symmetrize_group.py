@@ -13,6 +13,24 @@ from .op_symmetrize_preview import UV_OT_mio3_symmetry_preview
 from .globals import NAME_ATTR_GROUP
 from .utils import check_register, check_unregister
 
+BLENDER_5_OR_NEWER = bpy.app.version >= (5, 0, 0)
+
+if not BLENDER_5_OR_NEWER:
+
+    def uv_select_vert(loop, uv_layer):
+        return loop[uv_layer].select
+
+    def uv_select_vert_set(loop, uv_layer, value):
+        loop[uv_layer].select = value
+
+else:
+
+    def uv_select_vert(loop, uv_layer):
+        return loop.uv_select_vert
+
+    def uv_select_vert_set(loop, uv_layer, value):
+        loop.uv_select_vert_set(value)
+
 
 class Mio3qsUVGroupOperator:
     @classmethod
@@ -163,7 +181,7 @@ class OBJECT_OT_mio3qs_uv_group_assign(Mio3qsUVGroupOperator, Operator):
 
         active_uv_group_index = obj.mio3qs.uv_group.active_index
         for face in bm.faces:
-            if all(loop[uv_layer].select for loop in face.loops):
+            if all(uv_select_vert(loop, uv_layer) for loop in face.loops):
                 face[p_layer] = active_uv_group_index
 
         bmesh.update_edit_mesh(obj.data)
@@ -185,7 +203,7 @@ class OBJECT_OT_mio3qs_uv_group_unassign(Mio3qsUVGroupOperator, Operator):
             p_layer = bm.faces.layers.int.new(NAME_ATTR_GROUP)
 
         for face in bm.faces:
-            if all(loop[uv_layer].select for loop in face.loops):
+            if all(uv_select_vert(loop, uv_layer) for loop in face.loops):
                 face[p_layer] = 0
 
         bmesh.update_edit_mesh(obj.data)
@@ -212,7 +230,7 @@ class OBJECT_OT_mio3qs_update_by_vertex(Mio3qsUVGroupOperator, Operator):
         selected_vert = None
         for face in bm.faces:
             for loop in face.loops:
-                if loop[uv_layer].select:
+                if uv_select_vert(loop, uv_layer):
                     selected_vert = loop[uv_layer].uv
                     break
             if selected_vert:
@@ -273,12 +291,12 @@ class OBJECT_OT_mio3qs_select_grpup_uvs(Mio3qsUVGroupOperator, Operator):
             return {"CANCELLED"}
 
         for loop in (l for f in bm.faces for l in f.loops):
-            loop[uv_layer].select = False
+            uv_select_vert_set(loop, uv_layer, False)
 
         for face in bm.faces:
             if face[p_layer] == self.index:
                 for loop in face.loops:
-                    loop[uv_layer].select = True
+                    uv_select_vert_set(loop, uv_layer, True)
 
         bmesh.update_edit_mesh(obj.data)
         return {"FINISHED"}
@@ -307,7 +325,7 @@ class MIO3QS_PT_main(Panel):
         if NAME_ATTR_GROUP not in obj.data.attributes:
             row = split.row(align=True)
             row.alert = True
-            row.operator("object.mio3qs_update_prop", text="Init Group")
+            row.operator("object.mio3qs_init_props", text="Init Group")
         else:
             split.operator("uv.mio3_symmetry_preview", depress=UV_OT_mio3_symmetry_preview.is_running())
 
@@ -360,28 +378,10 @@ class MIO3QS_UL_uv_groups(UIList):
         row.operator("object.mio3qs_select_grpup_uvs", text="", icon="RESTRICT_SELECT_OFF", emboss=False).index = index
 
 
-def update_props(self, context):
-    UV_OT_mio3_symmetry_preview.redraw(context)
-
-
-class OBJECT_PG_mio3qs_uv_group_item(PropertyGroup):
-    uv_coord_u: FloatProperty(name="UV X", min=0.0, max=1.0, default=0.5, step=0.5, precision=3, update=update_props)
-    uv_offset_v: FloatProperty(name="Offset Y", min=-1.0, max=1.0, step=0.5, precision=3, update=update_props)
-
-
-class OBJECT_PG_mio3qs_uv_group(PropertyGroup):
-    items: CollectionProperty(name="UV Group Items", type=OBJECT_PG_mio3qs_uv_group_item)
-    active_index: IntProperty(name="Active Index")
-
-
-class OBJECT_PG_mio3qs(PropertyGroup):
-    uv_group: PointerProperty(name="UV Group", type=OBJECT_PG_mio3qs_uv_group)
-
-
-class OBJECT_OT_mio3qs_update_props(Mio3qsUVGroupOperator, Operator):
-    bl_idname = "object.mio3qs_update_prop"
-    bl_label = "Update Props"
-    bl_description = "Update Props by Old Data"
+class OBJECT_OT_mio3qs_init_props(Operator):
+    bl_idname = "object.mio3qs_init_props"
+    bl_label = "Init Props"
+    bl_description = "Initialize Props by Old Data"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -413,6 +413,24 @@ class OBJECT_OT_mio3qs_update_props(Mio3qsUVGroupOperator, Operator):
         return {"FINISHED"}
 
 
+def update_props(self, context):
+    UV_OT_mio3_symmetry_preview.redraw(context)
+
+
+class OBJECT_PG_mio3qs_uv_group_item(PropertyGroup):
+    uv_coord_u: FloatProperty(name="UV X", min=0.0, max=1.0, default=0.5, step=0.1, precision=3, update=update_props)
+    uv_offset_v: FloatProperty(name="Offset Y", min=-1.0, max=1.0, step=0.1, precision=3, update=update_props)
+
+
+class OBJECT_PG_mio3qs_uv_group(PropertyGroup):
+    items: CollectionProperty(name="UV Group Items", type=OBJECT_PG_mio3qs_uv_group_item)
+    active_index: IntProperty(name="Active Index")
+
+
+class OBJECT_PG_mio3qs(PropertyGroup):
+    uv_group: PointerProperty(name="UV Group", type=OBJECT_PG_mio3qs_uv_group)
+
+
 classes = [
     OBJECT_PG_mio3qs_uv_group_item,
     OBJECT_PG_mio3qs_uv_group,
@@ -425,7 +443,7 @@ classes = [
     OBJECT_OT_mio3qs_update_by_cursor,
     OBJECT_OT_mio3qs_update_by_vertex,
     OBJECT_OT_mio3qs_select_grpup_uvs,
-    OBJECT_OT_mio3qs_update_props,
+    OBJECT_OT_mio3qs_init_props,
     MIO3QS_UL_uv_groups,
 ]
 
@@ -434,7 +452,7 @@ def register():
     prefs = bpy.context.preferences.addons[__package__].preferences
     for c in classes:
         check_register(c)
-    
+
     if prefs.use_uv_group:
         check_register(MIO3QS_PT_main)
     bpy.types.Object.mio3qs = PointerProperty(type=OBJECT_PG_mio3qs)

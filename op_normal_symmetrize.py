@@ -12,7 +12,9 @@ class MESH_OT_mio3_normal_symmetrize(Mio3SYMOperator):
     bl_options = {"REGISTER", "UNDO"}
 
     axis: EnumProperty(
-        name="Axis", default="POSITIVE_X", items=[("NEGATIVE_X", "-X → +X", ""), ("POSITIVE_X", "-X ← +X", "")]
+        name="Axis",
+        default="POSITIVE_X",
+        items=[("NEGATIVE_X", "-X → +X", ""), ("POSITIVE_X", "-X ← +X", "")],
     )
 
     _center_threshold = 1e-5
@@ -84,6 +86,12 @@ class MESH_OT_mio3_normal_symmetrize(Mio3SYMOperator):
 
     def find_mirror_face(self, mirror_faces, mirror_center):
         return min(mirror_faces, key=lambda f: (mirror_center - f.calc_center_median()).length_squared)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+        layout.row().prop(self, "axis", text="Axis", expand=True)
 
 
 def menu(self, context):

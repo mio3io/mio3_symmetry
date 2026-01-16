@@ -79,9 +79,14 @@ class UV_OT_mio3_symmetry_preview(Operator):
         cls = self.__class__
         if not cls.is_running():
             return {"FINISHED"}
-        if event.type == "LEFTMOUSE" and event.value == "RELEASE":
+        
+        if event.type in ("LEFTMOUSE", "RET") and event.value == "RELEASE":
             self.update_mesh(context)
             reload_view(context)
+        if event.type == "Z" and event.ctrl and event.value == "RELEASE":
+            self.update_mesh(context)
+            reload_view(context)
+
         return {"PASS_THROUGH"}
 
     @staticmethod
@@ -134,6 +139,9 @@ class UV_OT_mio3_symmetry_preview(Operator):
         cls._polygons = []
 
         obj = context.active_object
+        if obj.type != "MESH" or obj.mode != "EDIT":
+            return cls.remove_handler()
+
         bm = bmesh.from_edit_mesh(obj.data)
 
         uv_layer = bm.loops.layers.uv.active
@@ -177,6 +185,8 @@ class UV_OT_mio3_symmetry_preview(Operator):
 
         if cnt_uv_y:
             cls._active_v += sum_uv_y / cnt_uv_y
+        
+        bm.free()
 
     @staticmethod
     def mirror_uv(uv, u_co, offset_v):
