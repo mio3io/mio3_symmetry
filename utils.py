@@ -1,9 +1,10 @@
+import sys
 import bpy
 import time
 from bpy.types import Operator
-from mathutils import Vector, kdtree
+from mathutils import kdtree
 
-DEBUG = False
+DEBUG = bool("--python" in sys.argv)
 
 
 def is_local(obj):

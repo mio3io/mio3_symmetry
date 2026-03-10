@@ -4,7 +4,7 @@ import time
 import numpy as np
 from bpy.types import Operator
 from bpy.props import EnumProperty, BoolProperty
-from .globals import NAME_ATTR_GROUP
+from .common import NAME_ATTR_GROUP
 from .utils_mirror import parse_side_name, get_mirror_name
 
 TMP_VG_NAME = "Mio3qsTempVg"
@@ -17,11 +17,11 @@ class OBJECT_OT_mio3_symmetry(Operator):
     bl_description = "Symmetrize meshes, shape keys, vertex groups, UVs, and normals"
     bl_options = {"REGISTER", "UNDO"}
 
-    mode: EnumProperty(name="Mode", default="+X", items=[("-X", "-X → +X", ""), ("+X", "-X ← +X", "")])
+    orient_type: EnumProperty(name="Orientation", items=[("LOCAL", "Local", ""), ("GLOBAL", "Global", "")])
+    direction: EnumProperty(name="Direction", default="+X", items=[("-X", "-X → +X", ""), ("+X", "-X ← +X", "")])
+    normal: BoolProperty(name="Normal", default=False)
+    uvmap: BoolProperty(name="UVMap", default=False)
     facial: BoolProperty(name="UnSymmetrize L/R Facial ShapeKeys", default=False)
-    normal: BoolProperty(name="Normal", default=True)
-    uvmap: BoolProperty(name="UVMap", default=True)
-    center: BoolProperty(name="Origin to Center", default=True)
     remove_mirror_mod: BoolProperty(name="Remove Mirror Modifier", default=True)
 
     _main_verts = []
@@ -58,7 +58,7 @@ class OBJECT_OT_mio3_symmetry(Operator):
                 o.select_set(False)
 
         # 状態を保存
-        if self.center and obj.location.x != 0:
+        if self.orient_type == "GLOBAL" and obj.location.x != 0:
             context.scene.cursor.location = (0,) + original_location[1:]
             bpy.ops.object.origin_set(type="ORIGIN_CURSOR", center="MEDIAN")
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
@@ -82,15 +82,18 @@ class OBJECT_OT_mio3_symmetry(Operator):
             orig_modifier_states.append(mod.show_viewport)
             mod.show_viewport = False
 
-        orgcopy = obj.copy()
-        orgcopy.data = obj.data.copy()
-        context.collection.objects.link(orgcopy)
+        if self.normal and obj.data.has_custom_normals:
+            orgcopy = obj.copy()
+            orgcopy.data = obj.data.copy()
+            context.collection.objects.link(orgcopy)
+        else:
+            orgcopy = None
 
         bm = bmesh.new()
         bm.from_mesh(obj.data)
 
         # 対称化
-        direction = "X" if self.mode == "+X" else "-X"
+        direction = "X" if self.direction == "+X" else "-X"
         data = bm.verts[:] + bm.edges[:] + bm.faces[:]
         bmesh.ops.symmetrize(bm, input=data, direction=direction, use_shapekey=True, dist=1e-5)
 
@@ -98,7 +101,7 @@ class OBJECT_OT_mio3_symmetry(Operator):
             elem.hide_set(False)
             elem.select_set(False)
 
-        select_condition = lambda x: x <= 0 if self.mode == "+X" else x >= 0
+        select_condition = lambda x: x <= 0 if self.direction == "+X" else x >= 0
         for v in bm.verts:
             if select_condition(v.co.x):
                 v.select = True
@@ -110,10 +113,9 @@ class OBJECT_OT_mio3_symmetry(Operator):
 
         if self.normal and obj.data.has_custom_normals:
             vg = self.create_temp_vgroup(obj, bm)
-            vg_name = vg.name # UnicodeDecodeError 対策
+            vg_name = vg.name  # UnicodeDecodeError 対策
         else:
-            vg = None
-            vg_name = None
+            vg, vg_name = None, None
 
         bm.to_mesh(obj.data)
         bm.free()
@@ -140,9 +142,10 @@ class OBJECT_OT_mio3_symmetry(Operator):
         if vg and vg_name in obj.vertex_groups:
             obj.vertex_groups.remove(obj.vertex_groups[vg_name])
 
-        copy_mesh = orgcopy.data
-        bpy.data.objects.remove(orgcopy, do_unlink=True)
-        bpy.data.meshes.remove(copy_mesh, do_unlink=True)
+        if orgcopy is not None:
+            copy_mesh = orgcopy.data
+            bpy.data.objects.remove(orgcopy, do_unlink=True)
+            bpy.data.meshes.remove(copy_mesh, do_unlink=True)
 
         vart_count_2 = len(obj.data.vertices)
         stime = time.time() - start_time
@@ -171,38 +174,58 @@ class OBJECT_OT_mio3_symmetry(Operator):
         if not uv_layer:
             return
 
-        if self.mode == "+X":
-            side_check = lambda x: x < 0.0
+        if self.direction == "+X":
+            v_is_source_side = [v.co.x < 0.0 for v in bm.verts]
         else:
-            side_check = lambda x: x > 0.0
+            v_is_source_side = [v.co.x > 0.0 for v in bm.verts]
+
+        def face_on_source_side(face) -> bool:
+            for v in face.verts:
+                if v_is_source_side[v.index]:
+                    return True
+            return False
 
         if not p_layer:
+            pivot_u = 0.5
             for face in bm.faces:
-                if not any(side_check(v.co.x) for v in face.verts):
+                if not face_on_source_side(face):
                     continue
                 for loop in face.loops:
                     uv = loop[uv_layer].uv
-                    dx = uv.x - 0.5
-                    uv.x = 0.5 if abs(dx) < 1e-5 else 0.5 - dx
+                    dx = uv.x - pivot_u
+                    uv.x = pivot_u if abs(dx) < 1e-5 else pivot_u - dx
         else:
+            coord_u = [it.uv_coord_u for it in uv_group.items]
+            offset_v = [it.uv_offset_v for it in uv_group.items]
+            u_len = len(coord_u)
+
             for face in bm.faces:
-                if not any(side_check(v.co.x) for v in face.verts):
+                if not face_on_source_side(face):
                     continue
+
                 uv_group_idx = face[p_layer]
-                u_co = uv_group.items[uv_group_idx].uv_coord_u
-                off_v = uv_group.items[uv_group_idx].uv_offset_v
-                for loop in face.loops:
-                    uv = loop[uv_layer].uv
-                    dx = uv.x - u_co
-                    uv.x = u_co if abs(dx) < 1e-5 else u_co - dx
-                    if off_v:
+                if uv_group_idx < 0 or uv_group_idx >= u_len:
+                    continue
+
+                pivot_u = coord_u[uv_group_idx]
+                off_v = offset_v[uv_group_idx]
+                if off_v:
+                    for loop in face.loops:
+                        uv = loop[uv_layer].uv
+                        dx = uv.x - pivot_u
+                        uv.x = pivot_u if abs(dx) < 1e-5 else pivot_u - dx
                         uv.y += off_v
+                else:
+                    for loop in face.loops:
+                        uv = loop[uv_layer].uv
+                        dx = uv.x - pivot_u
+                        uv.x = pivot_u if abs(dx) < 1e-5 else pivot_u - dx
 
     # 頂点ウェイト
     def symm_vgroups(self, obj, bm):
         deform_layer = bm.verts.layers.deform.verify()
         symmetric_groups = self.symmetric_group_mapping(obj)
-        select_condition = lambda x: x <= 0 if self.mode == "+X" else x >= 0
+        select_condition = lambda x: x <= 0 if self.direction == "+X" else x >= 0
 
         for v in bm.verts:
             if not v.select:
@@ -256,11 +279,12 @@ class OBJECT_OT_mio3_symmetry(Operator):
 
         self.rename_shape_keys(obj, self._replace_name_map)
 
+        v_len = len(obj.data.vertices)
         basis = obj.data.shape_keys.reference_key
-        basis_coords = np.zeros(len(basis.data) * 3, dtype=np.float32)
+        basis_coords = np.zeros(v_len * 3, dtype=np.float32)
         basis.data.foreach_get("co", basis_coords)
 
-        target_side_kind = "right" if self.mode == "+X" else "left"
+        target_side_kind = "right" if self.direction == "+X" else "left"
 
         for i, target_kb in enumerate(key_blocks):
             info = parse_side_name(target_kb.name)
@@ -284,10 +308,10 @@ class OBJECT_OT_mio3_symmetry(Operator):
             if len(mask_indices) == 0:
                 continue
 
-            source_coords = np.zeros(len(source_kb.data) * 3, dtype=np.float32)
+            source_coords = np.zeros(v_len * 3, dtype=np.float32)
             source_kb.data.foreach_get("co", source_coords)
 
-            target_coords = np.zeros(len(target_kb.data) * 3, dtype=np.float32)
+            target_coords = np.zeros(v_len * 3, dtype=np.float32)
             target_kb.data.foreach_get("co", target_coords)
 
             for idx in mask_indices:
@@ -342,12 +366,19 @@ class OBJECT_OT_mio3_symmetry(Operator):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "mode")
-        layout.prop(self, "normal")
-        layout.prop(self, "uvmap")
-        layout.prop(self, "center")
-        layout.prop(self, "facial")
-        layout.prop(self, "remove_mirror_mod")
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+        layout.row().prop(self, "orient_type", expand=True)
+        layout.row().prop(self, "direction", expand=True)
+        layout.separator()
+        layout.use_property_split = False
+        box = layout.box()
+        col = box.column()
+        col.label(text="Options:")
+        col.prop(self, "normal")
+        col.prop(self, "uvmap")
+        col.prop(self, "facial")
+        col.prop(self, "remove_mirror_mod")
 
 
 classes = [OBJECT_OT_mio3_symmetry]

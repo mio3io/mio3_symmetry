@@ -14,7 +14,6 @@ translation_dict = {
         ("*", "Symmetrize meshes, shape keys, vertex groups, UVs, and normals"): "メッシュ・シェイプキー・頂点グループ・UV・法線を対称化",
         ("*", "UnSymmetrize L/R Facial ShapeKeys"): "L/Rの表情シェイプキーを非対称化",
         ("*", "Remove Mirror Modifier"): "ミラーモディファイアがあれば削除",
-        ("*", "Origin to Center"): "原点を基準に対称化",
         ("*", "Object is not a mesh"): "オブジェクトがメッシュではありません",
         ("*", "Symmetrize meshes, shape keys, vertex groups, UVs, and normals while maintaining multi-resolution"): "マルチレゾを維持してメッシュ・シェイプキー・頂点グループ・UV・法線を対称化",
 

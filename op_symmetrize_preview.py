@@ -3,7 +3,7 @@ import bmesh
 import gpu
 from gpu_extras.batch import batch_for_shader
 from bpy.types import Operator, SpaceImageEditor
-from .globals import NAME_ATTR_GROUP
+from .common import NAME_ATTR_GROUP
 import time
 
 msgbus_owner = object()

@@ -10,7 +10,7 @@ from bpy.props import (
     CollectionProperty,
 )
 from .op_symmetrize_preview import UV_OT_mio3_symmetry_preview
-from .globals import NAME_ATTR_GROUP
+from .common import NAME_ATTR_GROUP
 from .utils import check_register, check_unregister
 
 BLENDER_5_OR_NEWER = bpy.app.version >= (5, 0, 0)

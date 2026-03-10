@@ -1,6 +1,8 @@
 # Mio3 Symmetry
 
-メッシュ・シェイプキー・頂点グループ・UV・法線・マルチレゾを対称化する Blender アドオンです（JP/EN）
+A Blender add-on for mesh symmetrization with multiresolution data preserved.（JP/EN）
+
+メッシュ・シェイプキー・頂点グループ・UV・法線・マルチレゾを対称化する Blender アドオンです。
 
 通常マルチレゾとミラーモディファイアは併用しにくいため、対称性を保ちながらモデリングするために作成しました。
 その他、メッシュの対称化に関する機能が含まれています。

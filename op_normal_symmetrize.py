@@ -84,7 +84,8 @@ class MESH_OT_mio3_normal_symmetrize(Mio3SYMOperator):
         self.print_time()
         return {"FINISHED"}
 
-    def find_mirror_face(self, mirror_faces, mirror_center):
+    @staticmethod
+    def find_mirror_face(mirror_faces, mirror_center):
         return min(mirror_faces, key=lambda f: (mirror_center - f.calc_center_median()).length_squared)
 
     def draw(self, context):
